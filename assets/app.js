@@ -11,8 +11,12 @@
 
   const API_BASE = 'https://note.com/api/v3/searches';
   const PAGE_SIZE = 20;          // 1回の検索で取る件数
-  const PAGES_PER_LOAD = 4;      // 1回の読み込みで、キーワードごとに何ページ分取るか
-  const DETAIL_LIMIT = 300;      // 購入状況を調べにいく上限（絞り込み後の上位から）
+  // 自前の中継サーバーを登録している場合は、遠慮せずたくさん取りにいく。
+  // 公開の共用サービス頼みのときは弾かれるので控えめにする。
+  const PAGES_PER_LOAD = 4;      // 共用の中継のとき、キーワードごとに取るページ数
+  const PAGES_PER_LOAD_DEEP = 12;// 自前の中継があるとき
+  const DETAIL_LIMIT = 300;      // 購入状況を調べにいく上限（共用の中継のとき）
+  const DETAIL_LIMIT_DEEP = 900; // 自前の中継があるとき
   const DETAIL_FAIL_LIMIT = 12;  // 続けてこの回数失敗したら、調べるのをやめる
   const FETCH_TIMEOUT = 12000;
   const PRICE_MAX = 10000;         // スライダーの右端。この値は「上限なし」の意味
@@ -200,6 +204,11 @@
     return API_BASE + '?' + params.toString();
   }
 
+  /** 自前の中継サーバーが登録されているか */
+  function hasOwnProxy() {
+    return !!settings.proxy;
+  }
+
   function applyProxy(template, url) {
     if (!template) return url;
     return template
@@ -355,7 +364,8 @@
     const apiSort = (state.sort === 'new' || shortPeriod) ? 'new' : 'popular';
 
     // キーワードが多い枠で全ページ取ると通信が膨らむので、そのぶんページ数を減らす
-    const pages = queries.length > 10 ? 2 : PAGES_PER_LOAD;
+    const base = hasOwnProxy() ? PAGES_PER_LOAD_DEEP : PAGES_PER_LOAD;
+    const pages = queries.length > 10 ? Math.max(2, Math.round(base / 3)) : base;
 
     const jobs = [];
     queries.forEach(function (q) {
@@ -876,7 +886,7 @@
 
     // 購入状況は、他の条件を満たした上位だけ調べる（そのぶん通信を節約できる）
     const candidates = applySort(applyFilters(pool, true));
-    const targets = candidates.slice(0, DETAIL_LIMIT);
+    const targets = candidates.slice(0, hasOwnProxy() ? DETAIL_LIMIT_DEEP : DETAIL_LIMIT);
     enrichDetails(targets);
     updateBoughtChips(targets);
 
