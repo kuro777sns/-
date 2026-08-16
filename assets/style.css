@@ -837,6 +837,20 @@ a { color: inherit; }
 }
 .modal-input:focus { border-color: var(--pink); }
 
+.diag-out {
+  margin: 10px 0 0;
+  padding: 12px;
+  max-height: 300px;
+  overflow: auto;
+  background: var(--cream-deep);
+  border-radius: var(--radius-sm);
+  font-size: .72rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
 .modal-check { display: flex; align-items: center; gap: 8px; font-size: .85rem; cursor: pointer; }
 .modal-check input { width: 17px; height: 17px; accent-color: var(--pink-deep); }
 

@@ -103,6 +103,8 @@
     modal:       document.getElementById('settingsModal'),
     proxyInput:  document.getElementById('proxyInput'),
     demoCheck:   document.getElementById('demoCheck'),
+    diagBtn:     document.getElementById('diagBtn'),
+    diagOut:     document.getElementById('diagOut'),
     saveBtn:     document.getElementById('saveSettings'),
   };
 
@@ -325,6 +327,28 @@
     return items.some(function (n) { return n.buyers !== null; });
   }
 
+  /**
+   * 「売れてる可能性大」のライン。
+   * 購入数が公開されていないので、有料noteのスキ数で上位3分の1に入る値を使う。
+   */
+  let likelyThreshold = Infinity;
+
+  function computeLikelyThreshold(pool) {
+    const paidLikes = pool
+      .filter(function (n) { return n.price > 0; })
+      .map(function (n) { return n.likes; })
+      .sort(function (a, b) { return b - a; });
+
+    if (!paidLikes.length) return Infinity;
+
+    // 件数が少ないうちは中央値、多ければ上位3分の1のライン
+    const idx = paidLikes.length < 6
+      ? Math.floor((paidLikes.length - 1) / 2)
+      : Math.floor(paidLikes.length / 3);
+
+    return Math.max(20, paidLikes[idx]);
+  }
+
   function applyFilters(items) {
     const now = Date.now();
     const periodDays = state.period === 'all' ? null : Number(state.period);
@@ -339,6 +363,7 @@
       if (!noUpperLimit && n.price > state.priceMax) return false;
 
       if (state.bought === 'yes' && !(n.buyers !== null && n.buyers > 0)) return false;
+      if (state.bought === 'likely' && !(n.price > 0 && n.likes >= likelyThreshold)) return false;
 
       if (periodDays && n.publishAt) {
         const t = Date.parse(n.publishAt);
@@ -488,7 +513,9 @@
 
     yesChip.disabled = !available && pool.length > 0;
     el.boughtNote.textContent = !pool.length ? ''
-      : available ? '' : 'このAPIからは購入数が取得できないため、売れ筋は価格×スキ数の推定値です。';
+      : available ? ''
+      : 'noteは購入数を公開していないため取得できません。「🔥 売れてる可能性大」＝有料 × スキ' +
+        (isFinite(likelyThreshold) ? likelyThreshold : 20) + '以上での推定です。';
 
     // 使えないのに選ばれたままにしない
     if (yesChip.disabled && state.bought === 'yes') {
@@ -515,6 +542,7 @@
       : state.items;
 
     const pool = dedupe(source);
+    likelyThreshold = computeLikelyThreshold(pool);
     updateBoughtChips(pool);
 
     const list = applySort(applyFilters(pool));
@@ -703,6 +731,62 @@
 
     el.rangeLabel.textContent = '¥' + min.toLocaleString('ja-JP') + ' 〜 ' +
       (max >= PRICE_MAX ? '上限なし' : '¥' + max.toLocaleString('ja-JP'));
+  }
+
+  /* ---------- API診断 ---------- */
+
+  /**
+   * note.com が実際に返してくるフィールドを見る。
+   * 「購入数が取れない」ことを推測ではなく事実として確認するための道具。
+   */
+  function runDiagnostics() {
+    el.diagOut.hidden = false;
+    el.diagOut.textContent = '調べています…';
+
+    fetchViaAnyRoute(buildUrl('副業', 0, 'popular'))
+      .then(function (json) {
+        const notes = extractNotes(json);
+        const first = notes[0];
+        const out = [];
+
+        out.push('✅ note.com からデータを取得できました');
+        out.push('経路: ' + (workingProxy ? '中継 ' + workingProxy : '直接アクセス'));
+        out.push('取得件数: ' + notes.length + '件');
+
+        if (!first) {
+          out.push('');
+          out.push('⚠️ 記事オブジェクトが見つかりませんでした。レスポンスの形が変わった可能性があります。');
+        } else {
+          const keys = Object.keys(first).sort();
+          const nums = keys.filter(function (k) { return typeof first[k] === 'number'; });
+          const hits = BUYER_KEYS.filter(function (k) { return k in first; });
+
+          out.push('');
+          out.push('■ 購入数のデータ');
+          out.push(hits.length
+            ? '✅ あります → ' + hits.join(', ')
+            : '❌ ありません（noteは購入数を公開していません）');
+
+          out.push('');
+          out.push('■ 数値で返ってくる項目');
+          out.push(nums.length
+            ? nums.map(function (k) { return '  ' + k + ' : ' + first[k]; }).join('\n')
+            : '  なし');
+
+          out.push('');
+          out.push('■ 1件目のキー全部（' + keys.length + '個）');
+          out.push('  ' + keys.join(', '));
+        }
+
+        el.diagOut.textContent = out.join('\n');
+      })
+      .catch(function (err) {
+        el.diagOut.textContent =
+          '❌ note.com からデータを取得できませんでした\n' +
+          '理由: ' + err.message + '\n\n' +
+          'ブラウザからの直接アクセスがCORSでブロックされている可能性が高いです。\n' +
+          '上の「CORSプロキシ」に中継URLを設定すると読めるようになります。';
+      });
   }
 
   /* ---------- セールスレター分析 ---------- */
@@ -897,8 +981,12 @@
     el.settingsBtn.addEventListener('click', function () {
       el.proxyInput.value = settings.proxy;
       el.demoCheck.checked = settings.demo;
+      el.diagOut.hidden = true;
+      el.diagOut.textContent = '';
       el.modal.hidden = false;
     });
+
+    el.diagBtn.addEventListener('click', runDiagnostics);
 
     el.modal.addEventListener('click', function (e) {
       if (e.target.hasAttribute('data-close')) el.modal.hidden = true;

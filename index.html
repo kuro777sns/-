@@ -103,6 +103,7 @@
       <div class="chips" id="boughtChips" role="group" aria-label="購入実績">
         <button class="chip is-active" data-bought="all" type="button">すべて</button>
         <button class="chip" data-bought="yes" type="button">🛒 買われた実績あり</button>
+        <button class="chip" data-bought="likely" type="button">🔥 売れてる可能性大</button>
       </div>
       <span class="filter-note" id="boughtNote"></span>
     </div>
@@ -183,6 +184,16 @@
         <input type="checkbox" id="demoCheck">
         <span>デモデータで表示する（通信しない）</span>
       </label>
+    </div>
+
+    <div class="modal-field">
+      <label class="modal-label">🔬 APIの中身を調べる</label>
+      <p class="modal-help">
+        note.com が実際にどんなデータを返しているかを確認します。
+        購入数が取れるかどうかもここで分かります。
+      </p>
+      <button class="btn btn-ghost" id="diagBtn" type="button">診断する</button>
+      <pre class="diag-out" id="diagOut" hidden></pre>
     </div>
 
     <div class="modal-actions">
