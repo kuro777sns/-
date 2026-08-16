@@ -54,15 +54,25 @@
     queries: ['副業', 'ChatGPT', '恋愛', 'エッセイ', '働き方'],
   };
 
-  // ジャンルを問わず横断で探す枠。各ジャンルの代表キーワードを1本ずつ束ねる
+  // ジャンルを問わず横断で探す枠。大分類の代表キーワードを束ねる
   const ALL_GENRE = {
     id: 'all',
     emoji: '🌏',
-    name: '全ジャンル横断',
-    queries: (window.GENRES || []).map(function (g) { return g.queries[0]; }),
+    name: '全ジャンル',
+    queries: (window.GENRE_GROUPS || []).reduce(function (acc, g) {
+      return acc.concat(g.queries.slice(0, 3));
+    }, []),
   };
 
-  const GENRES = [POPULAR_GENRE, ALL_GENRE].concat(window.GENRES || []);
+  // 大分類そのものも1つの検索先として扱う（小分類を選ばなくても探せる）
+  const GROUPS = (window.GENRE_GROUPS || []).map(function (g) {
+    return { id: 'g_' + g.id, groupId: g.id, isGroup: true,
+      emoji: g.emoji, name: g.name, queries: g.queries };
+  });
+
+  const SUB_GENRES = window.GENRES || [];
+  const TOP_GENRES = [POPULAR_GENRE, ALL_GENRE].concat(GROUPS);
+  const GENRES = TOP_GENRES.concat(SUB_GENRES);
 
   /* ---------- 状態 ---------- */
 
@@ -73,6 +83,7 @@
     price: 'paid',         // 無料noteは初期状態では出さない
     period: 'all',         // 「買われています」は購入の新しさなので、投稿日では絞らない
     bought: 'yes',         // 初期状態から「買われています」だけを出す
+    strict: 'on',          // ジャンルに一致しない記事を落とす
     priceMin: DEFAULT_MIN_PRICE,
     priceMax: PRICE_MAX,   // PRICE_MAX = 上限なし
     favOnly: false,
@@ -110,12 +121,13 @@
     periodChips: document.getElementById('periodChips'),
     boughtChips: document.getElementById('boughtChips'),
     boughtNote:  document.getElementById('boughtNote'),
+    strictChips: document.getElementById('strictChips'),
+    strictNote:  document.getElementById('strictNote'),
     priceMin:    document.getElementById('priceMin'),
     priceMax:    document.getElementById('priceMax'),
     rangeFill:   document.getElementById('rangeFill'),
     rangeLabel:  document.getElementById('priceRangeLabel'),
     tabs:        document.getElementById('tabs'),
-    genreToggle: document.getElementById('genreToggle'),
     genreHiddenNote: document.getElementById('genreHiddenNote'),
     filtersToggle: document.getElementById('filtersToggle'),
     filtersBody: document.getElementById('filtersBody'),
@@ -188,6 +200,12 @@
 
   function genreById(id) {
     return GENRES.filter(function (g) { return g.id === id; })[0] || POPULAR_GENRE;
+  }
+
+  /** いま開いている大分類（小分類を選んでいるときは、その親） */
+  function currentGroupId() {
+    const g = genreById(state.genreId);
+    return g.isGroup ? g.groupId : (g.group || null);
   }
 
   /* ============================================================
@@ -325,6 +343,9 @@
       buyers: extractBuyers(n),
       publishAt: n.publish_at || n.publishAt || n.created_at || '',
       thumb: n.eyecatch || (Array.isArray(n.pictures) && n.pictures[0] && n.pictures[0].url) || '',
+      // ジャンル一致の判定に使う。タイトルと本文の冒頭をまとめておく
+      text: ((n.name || n.title || '') + ' ' +
+             String(n.body || n.highlight || '').replace(/<[^>]+>/g, '')).slice(0, 400).toLowerCase(),
       isDemo: false,
     };
   }
@@ -548,6 +569,21 @@
     return base;
   }
 
+  /**
+   * いま選んでいるジャンルのキーワードが、記事のタイトルか本文冒頭に出てくるか。
+   * note の検索はゆるいので、これを通すとジャンル違いがかなり減る。
+   */
+  function matchesGenre(note) {
+    if (state.query) return true;                 // キーワード検索中は素通し
+    const genre = genreById(state.genreId);
+    if (genre.id === 'popular' || genre.id === 'all') return true;
+
+    const text = note.text || (note.title || '').toLowerCase();
+    return genre.queries.some(function (q) {
+      return text.indexOf(String(q).toLowerCase()) !== -1;
+    });
+  }
+
   /** この結果セットで購入数が取れているか */
   function hasBuyerData(items) {
     return items.some(function (n) { return n.buyers !== null; });
@@ -590,6 +626,8 @@
         if (n.price < state.priceMin) return false;
         if (!noUpperLimit && n.price > state.priceMax) return false;
       }
+
+      if (state.strict === 'on' && !matchesGenre(n)) return false;
 
       if (!skipBought && state.bought === 'yes' && !isBought(n)) return false;
       if (state.bought === 'likely' && !(n.price > 0 && engagement(n) >= likelyThreshold)) return false;
@@ -683,37 +721,46 @@
 
   function genreButton(g, big) {
     const active = !state.query && g.id === state.genreId;
+    // 小分類を選んでいるときは、親の大分類にも「開いている」印を付ける
+    const open = !active && g.isGroup && g.groupId === currentGroupId();
     return '<button type="button" class="genre-pill' + (big ? ' is-big' : '') +
-      (active ? ' is-active' : '') + '"' +
+      (active ? ' is-active' : '') + (open ? ' is-open' : '') + '"' +
       ' data-genre="' + escapeHtml(g.id) + '" aria-pressed="' + (active ? 'true' : 'false') + '">' +
       '<span class="emoji" aria-hidden="true">' + g.emoji + '</span>' +
       escapeHtml(g.name) + '</button>';
   }
 
+  /**
+   * ジャンルは2段。
+   * 上段で大分類を選ぶと、その中の小分類だけが下段に出る。
+   * 大分類のままでも検索できるので、細かく選ばなくても使える。
+   */
   function renderGenres() {
     renderGenreHiddenNote();
 
     const shown = visibleGenres();
-    const groups = window.GENRE_GROUPS || [];
-    let html = '';
+    const openGroup = currentGroupId();
 
-    // まず横断系を大きめに置く
-    const wide = shown.filter(function (g) { return !g.group; });
-    if (wide.length) {
-      html += '<div class="genre-row genre-row--wide">' +
-        wide.map(function (g) { return genreButton(g, true); }).join('') + '</div>';
-    }
-
-    // つぎにグループごとに並べる
-    groups.forEach(function (grp) {
-      const members = shown.filter(function (g) { return g.group === grp.id; });
-      if (!members.length) return;
-      html += '<div class="genre-group">' +
-        '<h3 class="genre-group-title"><span aria-hidden="true">' + grp.emoji + '</span> ' +
-        escapeHtml(grp.name) + '</h3>' +
-        '<div class="genre-row">' + members.map(function (g) { return genreButton(g, false); }).join('') +
-        '</div></div>';
+    const tops = TOP_GENRES.filter(function (g) {
+      return shown.indexOf(g) !== -1 || g.id === state.genreId;
     });
+
+    let html = '<div class="genre-row genre-row--top">' +
+      tops.map(function (g) { return genreButton(g, true); }).join('') + '</div>';
+
+    if (openGroup) {
+      const members = shown.filter(function (g) { return g.group === openGroup; });
+      const grp = (window.GENRE_GROUPS || []).filter(function (x) { return x.id === openGroup; })[0];
+
+      if (members.length && grp) {
+        html += '<div class="genre-sub">' +
+          '<h3 class="genre-group-title"><span aria-hidden="true">' + grp.emoji + '</span> ' +
+          escapeHtml(grp.name) + 'の中で絞る</h3>' +
+          '<div class="genre-row">' +
+          members.map(function (g) { return genreButton(g, false); }).join('') +
+          '</div></div>';
+      }
+    }
 
     el.genreGrid.innerHTML = html;
   }
@@ -895,6 +942,18 @@
 
     // 購入状況は、他の条件を満たした上位だけ調べる（そのぶん通信を節約できる）
     const candidates = applySort(applyFilters(pool, true));
+
+    // ジャンル一致で何件はじいたかを見せる（効きすぎていないか分かるように）
+    if (state.query || ['popular', 'all'].indexOf(state.genreId) !== -1) {
+      el.strictNote.textContent = 'キーワード検索と横断枠では、一致チェックは効きません。';
+    } else if (state.strict === 'on') {
+      const dropped = pool.filter(function (n) { return !matchesGenre(n); }).length;
+      el.strictNote.textContent = dropped
+        ? 'ジャンル名がタイトル・本文に出てこない ' + dropped + '件を除きました。'
+        : 'ジャンル違いは見つかりませんでした。';
+    } else {
+      el.strictNote.textContent = 'ジャンルに関係ない記事も混ざります。';
+    }
     const targets = candidates.slice(0, hasOwnProxy() ? DETAIL_LIMIT_DEEP : DETAIL_LIMIT);
     enrichDetails(targets);
     updateBoughtChips(targets);
@@ -1121,14 +1180,6 @@
 
   const NARROW = 700;
 
-  function updateGenreToggle() {
-    const collapsed = el.genreGrid.classList.contains('is-collapsed');
-    el.genreToggle.setAttribute('aria-expanded', String(!collapsed));
-    el.genreToggle.firstChild.nodeValue = collapsed
-      ? 'すべてのジャンルを見る（' + GENRES.length + '） '
-      : 'ジャンルをたたむ ';
-  }
-
   /** 絞り込みを開かなくても今の条件が分かるように、要約を出す */
   function filtersSummaryText() {
     const parts = [];
@@ -1150,6 +1201,8 @@
     if (state.bought === 'yes') parts.push('🔥買われています');
     else if (state.bought === 'likely') parts.push('🔥売れてる可能性大');
 
+    if (state.strict === 'on') parts.push('🎯一致のみ');
+
     const sortName = { selling: '売れ筋順', likes: 'スキ順', new: '新着順', cheap: '安い順' };
     parts.push(sortName[state.sort]);
 
@@ -1162,12 +1215,6 @@
   }
 
   function bindCollapsers() {
-    updateGenreToggle();
-    el.genreToggle.addEventListener('click', function () {
-      el.genreGrid.classList.toggle('is-collapsed');
-      updateGenreToggle();
-    });
-
     el.filtersToggle.addEventListener('click', function () {
       setFiltersOpen(el.filtersBody.hidden);
     });
@@ -1715,6 +1762,7 @@
     // 期間によって取得の仕方（人気順／新着順）が変わるので取り直す
     bindChipGroup(el.periodChips, 'period', function () { load(true); });
     bindChipGroup(el.boughtChips, 'bought', render);
+    bindChipGroup(el.strictChips, 'strict', render);
 
     // お気に入り表示切替
     el.favToggle.addEventListener('click', function () {

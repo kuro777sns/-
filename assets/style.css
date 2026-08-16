@@ -237,7 +237,12 @@ a { color: inherit; }
 }
 
 .genre-row { display: flex; flex-wrap: wrap; gap: 7px; }
-.genre-row--wide { gap: 8px; }
+.genre-row--top { gap: 8px; }
+
+.genre-sub {
+  border-top: 1px dashed var(--line);
+  padding-top: 12px;
+}
 
 .genre-pill {
   display: inline-flex;
@@ -265,6 +270,13 @@ a { color: inherit; }
   color: var(--white);
   font-weight: 700;
   box-shadow: 0 4px 12px rgba(244, 99, 143, .3);
+}
+
+.genre-pill.is-open {
+  background: var(--pink-soft);
+  border-color: var(--pink);
+  color: var(--pink-deep);
+  font-weight: 700;
 }
 
 .genre-pill.is-big {
@@ -320,7 +332,7 @@ a { color: inherit; }
 }
 
 .genre-grid.is-collapsed {
-  max-height: 260px;
+  max-height: 340px;
   overflow: hidden;
   -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
   mask-image: linear-gradient(to bottom, #000 70%, transparent);
@@ -1082,10 +1094,17 @@ a { color: inherit; }
 
   /* ジャンルは折りたたんで、恋愛と占いだけ見えるくらいに */
   .genre-grid { gap: 12px; }
-  .genre-grid.is-collapsed { max-height: 300px; }
+  .genre-grid.is-collapsed { max-height: 340px; }
   .genre-row { gap: 6px; }
   .genre-pill { padding: 8px 13px; font-size: .77rem; gap: 5px; }
-  .genre-pill.is-big { padding: 10px 16px; font-size: .84rem; }
+  .genre-pill.is-open {
+  background: var(--pink-soft);
+  border-color: var(--pink);
+  color: var(--pink-deep);
+  font-weight: 700;
+}
+
+.genre-pill.is-big { padding: 10px 16px; font-size: .84rem; }
   .genre-group-title { font-size: .73rem; }
 
   /* 絞り込みはたたんでおく。開くボタンに今の条件を出す */

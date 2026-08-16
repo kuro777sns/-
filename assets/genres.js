@@ -5,10 +5,14 @@
  *             複数書くと、それぞれの結果をまとめて重複を除いて表示する
  */
 window.GENRE_GROUPS = [
-  { id: 'love',  emoji: '💕', name: '恋愛' },
-  { id: 'uranai', emoji: '🔮', name: '占い・スピリチュアル' },
-  { id: 'biz',   emoji: '💼', name: 'ビジネス・お金' },
-  { id: 'life',  emoji: '🌿', name: 'くらし・その他' },
+  { id: 'love',   emoji: '💕', name: '恋愛',
+    queries: ['恋愛', '復縁', '婚活', '男性心理', '夫婦', '不倫'] },
+  { id: 'uranai', emoji: '🔮', name: '占い・スピ',
+    queries: ['占い', 'タロット', '占星術', 'スピリチュアル', '引き寄せの法則', '開運'] },
+  { id: 'biz',    emoji: '💼', name: 'ビジネス・お金',
+    queries: ['副業', '投資', 'SNS運用', 'ライティング', 'ChatGPT', '転職'] },
+  { id: 'life',   emoji: '🌿', name: 'くらし',
+    queries: ['メンタル', '美容', 'ダイエット', '子育て', '勉強法', 'エッセイ'] },
 ];
 
 window.GENRES = [

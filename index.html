@@ -55,11 +55,8 @@
   <!-- ジャンル -->
   <section class="section" aria-labelledby="genreHeading">
     <h2 class="section-title" id="genreHeading"><span aria-hidden="true">🎀</span> ジャンルからさがす</h2>
-    <div class="genre-grid is-collapsed" id="genreGrid"></div>
+    <div class="genre-grid" id="genreGrid"></div>
     <p class="genre-hidden-note" id="genreHiddenNote"></p>
-    <button class="wide-toggle" id="genreToggle" type="button" aria-expanded="false">
-      すべてのジャンルを見る <span class="chev" aria-hidden="true">▼</span>
-    </button>
   </section>
 
   <!-- 絞り込み -->
@@ -131,6 +128,15 @@
         <button class="chip" data-bought="likely" type="button">🔥 売れてる可能性大</button>
       </div>
       <span class="filter-note" id="boughtNote"></span>
+    </div>
+
+    <div class="filter-row">
+      <span class="filter-label">精度</span>
+      <div class="chips" id="strictChips" role="group" aria-label="ジャンル一致">
+        <button class="chip is-active" data-strict="on" type="button">🎯 ジャンル一致のみ</button>
+        <button class="chip" data-strict="off" type="button">ゆるく拾う</button>
+      </div>
+      <span class="filter-note" id="strictNote"></span>
     </div>
 
     <div class="filter-row filter-row--end">
