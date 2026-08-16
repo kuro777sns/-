@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>noteさがし｜売れてるnoteをジャンル別に</title>
+<meta name="description" content="noteの人気記事・売れてる有料noteをジャンル別に探せる、かわいい検索アプリ。">
+<meta name="theme-color" content="#FFF7F2">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍓</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&family=M+PLUS+Rounded+1c:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<div class="bg-deco" aria-hidden="true">
+  <span class="blob blob-1"></span>
+  <span class="blob blob-2"></span>
+  <span class="blob blob-3"></span>
+</div>
+
+<header class="header">
+  <div class="header-inner">
+    <h1 class="logo">
+      <span class="logo-mark">🍓</span>
+      <span class="logo-text">noteさがし</span>
+    </h1>
+    <p class="tagline">売れてるnoteを、ジャンル別に。</p>
+    <button class="icon-btn" id="settingsBtn" type="button" title="設定" aria-label="設定を開く">⚙️</button>
+  </div>
+
+  <form class="searchbar" id="searchForm" role="search">
+    <span class="searchbar-icon" aria-hidden="true">🔍</span>
+    <input
+      type="search"
+      id="searchInput"
+      class="searchbar-input"
+      placeholder="キーワードで探す（例：副業のはじめかた）"
+      autocomplete="off"
+      aria-label="キーワード検索">
+    <button type="submit" class="searchbar-btn">さがす</button>
+  </form>
+</header>
+
+<main class="main">
+
+  <!-- ジャンル -->
+  <section class="section" aria-labelledby="genreHeading">
+    <h2 class="section-title" id="genreHeading"><span aria-hidden="true">🎀</span> ジャンルからさがす</h2>
+    <div class="genre-grid" id="genreGrid"></div>
+  </section>
+
+  <!-- 絞り込み -->
+  <section class="section filters" aria-label="絞り込み">
+    <div class="filter-row">
+      <span class="filter-label">並び替え</span>
+      <div class="chips" id="sortChips" role="group" aria-label="並び替え">
+        <button class="chip is-active" data-sort="selling" type="button">🔥 売れ筋順</button>
+        <button class="chip" data-sort="likes" type="button">💗 スキが多い順</button>
+        <button class="chip" data-sort="new" type="button">✨ 新着順</button>
+        <button class="chip" data-sort="cheap" type="button">🪙 価格が安い順</button>
+      </div>
+    </div>
+
+    <div class="filter-row">
+      <span class="filter-label">タイプ</span>
+      <div class="chips" id="priceChips" role="group" aria-label="有料・無料">
+        <button class="chip is-active" data-price="all" type="button">すべて</button>
+        <button class="chip" data-price="paid" type="button">💰 有料のみ</button>
+        <button class="chip" data-price="free" type="button">🆓 無料のみ</button>
+      </div>
+    </div>
+
+    <div class="filter-row">
+      <span class="filter-label">期間</span>
+      <div class="chips" id="periodChips" role="group" aria-label="投稿期間">
+        <button class="chip is-active" data-period="all" type="button">全期間</button>
+        <button class="chip" data-period="365" type="button">1年以内</button>
+        <button class="chip" data-period="90" type="button">3ヶ月以内</button>
+        <button class="chip" data-period="30" type="button">1ヶ月以内</button>
+      </div>
+    </div>
+
+    <div class="filter-row filter-row--end">
+      <button class="fav-toggle" id="favToggle" type="button" aria-pressed="false">
+        ⭐ お気に入りだけ表示 <span class="fav-count" id="favCount">0</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- 結果 -->
+  <section class="section" aria-labelledby="resultHeading">
+    <div class="result-head">
+      <h2 class="section-title" id="resultHeading">
+        <span aria-hidden="true">📚</span> <span id="resultTitle">おすすめのnote</span>
+      </h2>
+      <p class="result-count" id="resultCount"></p>
+    </div>
+
+    <div class="status" id="status" role="status" aria-live="polite"></div>
+    <div class="card-grid" id="cardGrid"></div>
+
+    <div class="more-wrap">
+      <button class="more-btn" id="moreBtn" type="button" hidden>もっと見る 🔽</button>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <p>データ提供：<a href="https://note.com" target="_blank" rel="noopener noreferrer">note.com</a> の公開API</p>
+  <p class="footer-note">「売れ筋スコア」はスキ数と価格から算出した独自の推定値です。実際の販売数ではありません。</p>
+</footer>
+
+<!-- 設定モーダル -->
+<div class="modal" id="settingsModal" hidden>
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+    <h2 class="modal-title" id="settingsTitle">⚙️ 設定</h2>
+
+    <div class="modal-field">
+      <label class="modal-label" for="proxyInput">CORSプロキシ（任意）</label>
+      <p class="modal-help">
+        ブラウザから note.com のAPIを直接読めないとき（CORSエラー）に使う中継URLです。
+        <code>{url}</code> が取得先URLに置き換わります。空欄なら自動候補を順に試します。
+      </p>
+      <input type="url" id="proxyInput" class="modal-input" placeholder="https://example.com/?url={url}">
+    </div>
+
+    <div class="modal-field">
+      <label class="modal-check">
+        <input type="checkbox" id="demoCheck">
+        <span>デモデータで表示する（通信しない）</span>
+      </label>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-ghost" type="button" data-close>とじる</button>
+      <button class="btn btn-primary" id="saveSettings" type="button">保存してさがす</button>
+    </div>
+  </div>
+</div>
+
+<script src="assets/genres.js"></script>
+<script src="assets/sample-data.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
