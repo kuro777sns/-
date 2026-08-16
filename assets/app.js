@@ -10,7 +10,9 @@
   /* ---------- 定数 ---------- */
 
   const API_BASE = 'https://note.com/api/v3/searches';
-  const PAGE_SIZE = 12;
+  const PAGE_SIZE = 20;          // 1回の検索で取る件数
+  const PAGES_PER_LOAD = 3;      // 1回の読み込みで、キーワードごとに何ページ分取るか
+  const DETAIL_LIMIT = 60;       // 購入状況を調べにいく上限（絞り込み後の上位から）
   const FETCH_TIMEOUT = 12000;
   const PRICE_MAX = 10000;         // スライダーの右端。この値は「上限なし」の意味
   const DEFAULT_MIN_PRICE = 980;   // 初期の下限価格
@@ -21,7 +23,8 @@
     'sales_count', 'sold_count', 'buy_count', 'paid_count',
   ];
 
-  // 記事詳細を取りにいく同時本数。中継サーバーに負荷をかけすぎない程度に
+  // 中継サーバーに負荷をかけすぎないよう、同時に投げる本数を絞る
+  const SEARCH_CONCURRENCY = 5;
   const DETAIL_CONCURRENCY = 3;
 
   // 中継候補（先頭 null = 直接アクセス）
@@ -41,7 +44,7 @@
     id: 'popular',
     emoji: '🔥',
     name: 'いま人気',
-    queries: ['副業', 'ChatGPT', 'エッセイ'],
+    queries: ['副業', 'ChatGPT', '恋愛', 'エッセイ', '働き方'],
   };
 
   const GENRES = [POPULAR_GENRE].concat(window.GENRES || []);
@@ -299,21 +302,50 @@
   }
 
   /**
-   * 現在の状態にあわせて1ページ分を取得する。
+   * 同時実行数を絞って順に走らせる。
+   * 中継サーバーに一度に投げすぎると弾かれることがあるため。
+   */
+  function runLimited(tasks, limit) {
+    const results = new Array(tasks.length);
+    let index = 0;
+
+    function worker() {
+      if (index >= tasks.length) return Promise.resolve();
+      const i = index++;
+      return tasks[i]()
+        .then(function (r) { results[i] = r; }, function () { results[i] = null; })
+        .then(worker);
+    }
+
+    const workers = [];
+    for (let i = 0; i < Math.min(limit, tasks.length); i++) workers.push(worker());
+    return Promise.all(workers).then(function () { return results; });
+  }
+
+  /**
+   * 現在の状態にあわせてまとめて取得する。
+   * キーワードごとに PAGES_PER_LOAD ページ分を並べて投げるので、
+   * 1回の読み込みで キーワード数 × ページ数 × PAGE_SIZE 件まで集まる。
    */
   function fetchPage(page) {
     const genre = genreById(state.genreId);
     const queries = state.query ? [state.query] : genre.queries;
     const apiSort = state.sort === 'new' ? 'new' : 'popular';
-    const start = page * PAGE_SIZE;
 
-    const jobs = queries.map(function (q) {
-      return fetchViaAnyRoute(buildUrl(q, start, apiSort))
-        .then(function (json) { return extractNotes(json); })
-        .catch(function () { return null; }); // 1本失敗しても他が生きていれば表示する
+    const jobs = [];
+    queries.forEach(function (q) {
+      for (let i = 0; i < PAGES_PER_LOAD; i++) {
+        const start = (page * PAGES_PER_LOAD + i) * PAGE_SIZE;
+        jobs.push(function () {
+          // 1本失敗しても他が生きていれば表示する
+          return fetchViaAnyRoute(buildUrl(q, start, apiSort))
+            .then(function (json) { return extractNotes(json); })
+            .catch(function () { return null; });
+        });
+      }
     });
 
-    return Promise.all(jobs).then(function (results) {
+    return runLimited(jobs, SEARCH_CONCURRENCY).then(function (results) {
       if (results.every(function (r) { return r === null; })) {
         throw new Error('note.com からデータを取得できませんでした');
       }
@@ -321,6 +353,9 @@
       results.forEach(function (list) {
         (list || []).forEach(function (raw) { merged.push(normalize(raw, state.genreId)); });
       });
+      // 最後のページが埋まっていれば、まだ先がある
+      const last = results[results.length - 1];
+      merged.hasMore = !!(last && last.length >= PAGE_SIZE);
       return merged;
     });
   }
@@ -460,7 +495,8 @@
     return Math.max(20, paid[idx]);
   }
 
-  function applyFilters(items) {
+  /** skipBought を立てると、購入実績の判定だけ後回しにする */
+  function applyFilters(items, skipBought) {
     const now = Date.now();
     const periodDays = state.period === 'all' ? null : Number(state.period);
     const noUpperLimit = state.priceMax >= PRICE_MAX;
@@ -475,7 +511,7 @@
         if (!noUpperLimit && n.price > state.priceMax) return false;
       }
 
-      if (state.bought === 'yes' && !isBought(n)) return false;
+      if (!skipBought && state.bought === 'yes' && !isBought(n)) return false;
       if (state.bought === 'likely' && !(n.price > 0 && engagement(n) >= likelyThreshold)) return false;
 
       if (periodDays && n.publishAt) {
@@ -646,7 +682,8 @@
         '購入状況を確認中… ' + progress.done + '/' + progress.total + '件';
     } else if (progress.total) {
       el.boughtNote.textContent =
-        'note公式の「買われています」表示と同じデータ。該当 ' + boughtCount + '件。';
+        'note公式の「買われています」表示と同じデータ。上位' + progress.total +
+        '件を確認して該当 ' + boughtCount + '件。';
     } else {
       el.boughtNote.textContent = '';
     }
@@ -669,10 +706,16 @@
 
     const pool = dedupe(source);
     likelyThreshold = computeLikelyThreshold(pool);
-    enrichDetails(pool);
-    updateBoughtChips(pool);
 
-    const list = applySort(applyFilters(pool));
+    // 購入状況は、他の条件を満たした上位だけ調べる（そのぶん通信を節約できる）
+    const candidates = applySort(applyFilters(pool, true));
+    const targets = candidates.slice(0, DETAIL_LIMIT);
+    enrichDetails(targets);
+    updateBoughtChips(targets);
+
+    const list = state.bought === 'yes'
+      ? candidates.filter(isBought)
+      : candidates;
 
     el.resultCount.textContent = list.length ? list.length + '件' : '';
 
@@ -765,8 +808,10 @@
       .then(function (fetched) {
         if (myReq !== state.reqId) return; // もっと新しいリクエストが走っている
 
+        const before = state.items.length;
         state.items = dedupe(state.items.concat(fetched));
-        state.hasMore = fetched.length >= PAGE_SIZE;
+        // 新しく増えたものが無ければ、これ以上ページを進めても意味がない
+        state.hasMore = fetched.hasMore !== false && state.items.length > before;
 
         if (!state.items.length) {
           setStatus('info', '🔎', '<p>結果が0件でした。別のキーワードで試してみてください。</p>');
