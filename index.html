@@ -30,11 +30,6 @@
     <button class="icon-btn" id="settingsBtn" type="button" title="設定" aria-label="設定を開く">⚙️</button>
   </div>
 
-  <nav class="tabs" id="tabs" role="tablist" aria-label="モード切り替え">
-    <button class="tab is-active" data-tab="search" type="button" role="tab" aria-selected="true">🔍 noteをさがす</button>
-    <button class="tab" data-tab="letter" type="button" role="tab" aria-selected="false">📝 セールスレター分析</button>
-  </nav>
-
   <form class="searchbar" id="searchForm" role="search">
     <span class="searchbar-icon" aria-hidden="true">🔍</span>
     <input
@@ -48,16 +43,33 @@
   </form>
 </header>
 
+<div class="tabbar">
+  <nav class="tabs" id="tabs" role="tablist" aria-label="モード切り替え">
+    <button class="tab is-active" data-tab="search" type="button" role="tab" aria-selected="true">🔍 さがす</button>
+    <button class="tab" data-tab="letter" type="button" role="tab" aria-selected="false">📝 レター分析</button>
+  </nav>
+</div>
+
 <main class="main" id="searchPane">
 
   <!-- ジャンル -->
   <section class="section" aria-labelledby="genreHeading">
     <h2 class="section-title" id="genreHeading"><span aria-hidden="true">🎀</span> ジャンルからさがす</h2>
-    <div class="genre-grid" id="genreGrid"></div>
+    <div class="genre-grid is-collapsed" id="genreGrid"></div>
+    <button class="wide-toggle" id="genreToggle" type="button" aria-expanded="false">
+      すべてのジャンルを見る <span class="chev" aria-hidden="true">▼</span>
+    </button>
   </section>
 
   <!-- 絞り込み -->
   <section class="section filters" aria-label="絞り込み">
+    <button class="filters-toggle" id="filtersToggle" type="button" aria-expanded="true" aria-controls="filtersBody">
+      <span class="filters-title">🎚 絞り込み</span>
+      <span class="filters-summary" id="filtersSummary"></span>
+      <span class="chev" aria-hidden="true">▼</span>
+    </button>
+
+    <div class="filters-body" id="filtersBody">
     <div class="filter-row">
       <span class="filter-label">並び替え</span>
       <div class="chips" id="sortChips" role="group" aria-label="並び替え">
@@ -112,6 +124,7 @@
       <button class="fav-toggle" id="favToggle" type="button" aria-pressed="false">
         ⭐ お気に入りだけ表示 <span class="fav-count" id="favCount">0</span>
       </button>
+    </div>
     </div>
   </section>
 

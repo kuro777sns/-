@@ -99,6 +99,10 @@
     rangeFill:   document.getElementById('rangeFill'),
     rangeLabel:  document.getElementById('priceRangeLabel'),
     tabs:        document.getElementById('tabs'),
+    genreToggle: document.getElementById('genreToggle'),
+    filtersToggle: document.getElementById('filtersToggle'),
+    filtersBody: document.getElementById('filtersBody'),
+    filtersSummary: document.getElementById('filtersSummary'),
     searchPane:  document.getElementById('searchPane'),
     letterPane:  document.getElementById('letterPane'),
     letterInput: document.getElementById('letterInput'),
@@ -642,9 +646,8 @@
     const paid = n.price > 0;
     const detail = detailOf(n);
     const scoreLabel = !paid ? '人気度'
-      : detail && (detail.purchased24 || detail.purchasedRecently) ? '売れ筋スコア（購入実績あり）'
-      : n.comments > 0 ? '売れ筋スコア（コメント込み推定）'
-      : '売れ筋スコア（推定）';
+      : detail && (detail.purchased24 || detail.purchasedRecently) ? '売れ筋（実績あり）'
+      : '売れ筋（推定）';
 
     const thumb = n.thumb
       ? '<img src="' + escapeHtml(n.thumb) + '" alt="" loading="lazy" decoding="async">'
@@ -737,6 +740,8 @@
   }
 
   function render() {
+    el.filtersSummary.textContent = filtersSummaryText();
+
     // 見出し
     if (state.favOnly) {
       el.resultTitle.textContent = 'お気に入り';
@@ -959,6 +964,65 @@
     el.letterPane.hidden = isSearch;
     el.searchForm.hidden = !isSearch;
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /* ---------- 折りたたみ（スマホで縦に長くなりすぎないように） ---------- */
+
+  const NARROW = 700;
+
+  function updateGenreToggle() {
+    const collapsed = el.genreGrid.classList.contains('is-collapsed');
+    el.genreToggle.setAttribute('aria-expanded', String(!collapsed));
+    el.genreToggle.firstChild.nodeValue = collapsed
+      ? 'すべてのジャンルを見る（' + GENRES.length + '） '
+      : 'ジャンルをたたむ ';
+  }
+
+  /** 絞り込みを開かなくても今の条件が分かるように、要約を出す */
+  function filtersSummaryText() {
+    const parts = [];
+
+    if (state.price === 'paid') parts.push('有料');
+    else if (state.price === 'free') parts.push('無料');
+
+    if (state.price !== 'free' && (state.priceMin > 0 || state.priceMax < PRICE_MAX)) {
+      parts.push('¥' + state.priceMin.toLocaleString('ja-JP') +
+        (state.priceMax >= PRICE_MAX ? '〜' : '〜¥' + state.priceMax.toLocaleString('ja-JP')));
+    }
+
+    if (state.period !== 'all') {
+      const days = Number(state.period);
+      parts.push(days === 7 ? '1週間以内' : days === 30 ? '1ヶ月以内'
+        : days === 90 ? '3ヶ月以内' : '1年以内');
+    }
+
+    if (state.bought === 'yes') parts.push('🔥買われています');
+    else if (state.bought === 'likely') parts.push('🔥売れてる可能性大');
+
+    const sortName = { selling: '売れ筋順', likes: 'スキ順', new: '新着順', cheap: '安い順' };
+    parts.push(sortName[state.sort]);
+
+    return parts.join(' / ');
+  }
+
+  function setFiltersOpen(open) {
+    el.filtersBody.hidden = !open;
+    el.filtersToggle.setAttribute('aria-expanded', String(open));
+  }
+
+  function bindCollapsers() {
+    updateGenreToggle();
+    el.genreToggle.addEventListener('click', function () {
+      el.genreGrid.classList.toggle('is-collapsed');
+      updateGenreToggle();
+    });
+
+    el.filtersToggle.addEventListener('click', function () {
+      setFiltersOpen(el.filtersBody.hidden);
+    });
+
+    // 狭い画面では最初はたたんでおく
+    setFiltersOpen(window.innerWidth > NARROW);
   }
 
   /* ---------- 価格帯スライダー ---------- */
@@ -1559,6 +1623,7 @@
   renderGenres();
   syncPriceRange();
   bindEvents();
+  bindCollapsers();
   el.favCount.textContent = String(Object.keys(favs).length);
   load(true);
 })();
