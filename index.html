@@ -71,8 +71,8 @@
     <div class="filter-row">
       <span class="filter-label">タイプ</span>
       <div class="chips" id="priceChips" role="group" aria-label="有料・無料">
-        <button class="chip is-active" data-price="all" type="button">すべて</button>
-        <button class="chip" data-price="paid" type="button">💰 有料のみ</button>
+        <button class="chip" data-price="all" type="button">すべて</button>
+        <button class="chip is-active" data-price="paid" type="button">💰 有料のみ</button>
         <button class="chip" data-price="free" type="button">🆓 無料のみ</button>
       </div>
     </div>
@@ -81,10 +81,10 @@
       <span class="filter-label">価格帯</span>
       <div class="price-range" id="priceRange">
         <span class="range-track"><span class="range-fill" id="rangeFill"></span></span>
-        <input type="range" id="priceMin" min="0" max="10000" step="100" value="0" aria-label="下限価格">
-        <input type="range" id="priceMax" min="0" max="10000" step="100" value="10000" aria-label="上限価格">
+        <input type="range" id="priceMin" min="0" max="10000" step="10" value="980" aria-label="下限価格">
+        <input type="range" id="priceMax" min="0" max="10000" step="10" value="10000" aria-label="上限価格">
       </div>
-      <span class="price-range-label" id="priceRangeLabel">¥0 〜 上限なし</span>
+      <span class="price-range-label" id="priceRangeLabel">¥980 〜 上限なし</span>
     </div>
 
     <div class="filter-row">

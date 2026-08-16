@@ -12,7 +12,8 @@
   const API_BASE = 'https://note.com/api/v3/searches';
   const PAGE_SIZE = 12;
   const FETCH_TIMEOUT = 12000;
-  const PRICE_MAX = 10000;   // スライダーの右端。この値は「上限なし」の意味
+  const PRICE_MAX = 10000;         // スライダーの右端。この値は「上限なし」の意味
+  const DEFAULT_MIN_PRICE = 980;   // 初期の下限価格
 
   // 購入数がどのキーで返ってくるか分からないので、ありそうなものを順に見る
   const BUYER_KEYS = [
@@ -48,10 +49,10 @@
     genreId: 'popular',
     query: '',        // キーワード検索（入力があればジャンルより優先）
     sort: 'selling',
-    price: 'all',
+    price: 'paid',         // 無料noteは初期状態では出さない
     period: 'all',
     bought: 'all',
-    priceMin: 0,
+    priceMin: DEFAULT_MIN_PRICE,
     priceMax: PRICE_MAX,   // PRICE_MAX = 上限なし
     favOnly: false,
     page: 0,
@@ -358,9 +359,11 @@
       if (state.price === 'paid' && n.price <= 0) return false;
       if (state.price === 'free' && n.price > 0) return false;
 
-      // 価格帯（無料noteは価格0なので下限0のときだけ残る）
-      if (n.price < state.priceMin) return false;
-      if (!noUpperLimit && n.price > state.priceMax) return false;
+      // 価格帯。「無料のみ」を選んでいるときは下限が邪魔になるので効かせない
+      if (state.price !== 'free') {
+        if (n.price < state.priceMin) return false;
+        if (!noUpperLimit && n.price > state.priceMax) return false;
+      }
 
       if (state.bought === 'yes' && !(n.buyers !== null && n.buyers > 0)) return false;
       if (state.bought === 'likely' && !(n.price > 0 && n.likes >= likelyThreshold)) return false;
