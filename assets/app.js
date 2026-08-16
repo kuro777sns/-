@@ -21,6 +21,9 @@
     'sales_count', 'sold_count', 'buy_count', 'paid_count',
   ];
 
+  // 記事詳細を取りにいく同時本数。中継サーバーに負荷をかけすぎない程度に
+  const DETAIL_CONCURRENCY = 3;
+
   // 中継候補（先頭 null = 直接アクセス）
   const PROXY_CANDIDATES = [
     null,
@@ -323,6 +326,83 @@
   }
 
   /* ============================================================
+     記事詳細（購入されたかどうか）の取得
+
+     検索APIは購入状況を返さないが、記事詳細APIには
+     is_purchased_within_last_24_hours / is_recently_purchased がある。
+     note.com が出している「買われています｜過去24時間」バッジと同じデータ。
+     一覧に出た記事ぶんだけ、あとから順に取りにいって補完する。
+     ============================================================ */
+
+  const details = Object.create(null);   // key -> { state, data }
+  let rerenderTimer = null;
+
+  function pickDetail(json) {
+    const d = (json && json.data) || extractNotes(json)[0] || json || {};
+    return {
+      purchased24: d.is_purchased_within_last_24_hours === true,
+      purchasedRecently: d.is_recently_purchased === true,
+      remainedChars: Number(d.remained_char_num || 0),
+      shares: Number(d.note_share_total_count || 0),
+      raters: Number(d.rater_count || 0),
+    };
+  }
+
+  function detailOf(note) {
+    const entry = details[note.key];
+    return entry && entry.state === 'ok' ? entry.data : null;
+  }
+
+  /** 実データで「買われた」と言えるか */
+  function isBought(note) {
+    const d = detailOf(note);
+    return !!(d && (d.purchased24 || d.purchasedRecently));
+  }
+
+  function scheduleRerender() {
+    if (rerenderTimer) return;
+    rerenderTimer = setTimeout(function () {
+      rerenderTimer = null;
+      render();
+    }, 400);
+  }
+
+  function detailProgress(list) {
+    let done = 0;
+    let total = 0;
+    list.forEach(function (n) {
+      if (n.isDemo || !n.key) return;
+      total++;
+      const entry = details[n.key];
+      if (entry && entry.state !== 'pending') done++;
+    });
+    return { done: done, total: total };
+  }
+
+  /** まだ調べていない記事の詳細を、少しずつ取りにいく */
+  function enrichDetails(list) {
+    const queue = list.filter(function (n) {
+      return !n.isDemo && n.key && !details[n.key];
+    });
+    if (!queue.length) return;
+
+    queue.forEach(function (n) { details[n.key] = { state: 'pending' }; });
+
+    let index = 0;
+    function next() {
+      if (index >= queue.length) return;
+      const note = queue[index++];
+
+      fetchViaAnyRoute('https://note.com/api/v3/notes/' + note.key)
+        .then(function (json) { details[note.key] = { state: 'ok', data: pickDetail(json) }; })
+        .catch(function () { details[note.key] = { state: 'fail' }; })
+        .then(function () { scheduleRerender(); next(); });
+    }
+
+    for (let i = 0; i < DETAIL_CONCURRENCY; i++) next();
+  }
+
+  /* ============================================================
      並び替え・絞り込み・スコア
      ============================================================ */
 
@@ -343,7 +423,14 @@
    */
   function rawScore(note) {
     if (note.buyers !== null && note.price > 0) return note.price * note.buyers * 10;
-    return note.price > 0 ? note.price * engagement(note) : engagement(note);
+
+    const base = note.price > 0 ? note.price * engagement(note) : engagement(note);
+
+    // 実際に買われていることが分かっている記事を上に持ってくる
+    const d = detailOf(note);
+    if (d && d.purchased24) return base * 4;
+    if (d && d.purchasedRecently) return base * 2;
+    return base;
   }
 
   /** この結果セットで購入数が取れているか */
@@ -388,7 +475,7 @@
         if (!noUpperLimit && n.price > state.priceMax) return false;
       }
 
-      if (state.bought === 'yes' && !(n.buyers !== null && n.buyers > 0)) return false;
+      if (state.bought === 'yes' && !isBought(n)) return false;
       if (state.bought === 'likely' && !(n.price > 0 && engagement(n) >= likelyThreshold)) return false;
 
       if (periodDays && n.publishAt) {
@@ -475,8 +562,9 @@
   function cardHtml(n, scorePct, isHot) {
     const isFav = Object.prototype.hasOwnProperty.call(favs, n.id);
     const paid = n.price > 0;
+    const detail = detailOf(n);
     const scoreLabel = !paid ? '人気度'
-      : n.buyers !== null ? '売れ筋スコア（実売ベース）'
+      : detail && (detail.purchased24 || detail.purchasedRecently) ? '売れ筋スコア（購入実績あり）'
       : n.comments > 0 ? '売れ筋スコア（コメント込み推定）'
       : '売れ筋スコア（推定）';
 
@@ -492,6 +580,11 @@
       '<div class="card-thumb">' + thumb +
         '<div class="card-badges">' +
           '<span class="badge ' + (paid ? 'paid">' + escapeHtml(formatPrice(n.price)) : 'free">無料') + '</span>' +
+          (detail && detail.purchased24
+            ? '<span class="badge bought">🔥 買われています</span>'
+            : detail && detail.purchasedRecently
+              ? '<span class="badge bought">📈 最近買われた</span>'
+              : '') +
           (n.buyers !== null && n.buyers > 0
             ? '<span class="badge bought">🛒 ' + n.buyers.toLocaleString('ja-JP') + '人が購入</span>'
             : '') +
@@ -519,6 +612,9 @@
           '<span class="likes">♡ ' + n.likes.toLocaleString('ja-JP') + '</span>' +
           (n.comments > 0 ? '<span class="comments">💬 ' + n.comments.toLocaleString('ja-JP') + '</span>' : '') +
           (n.buyers !== null ? '<span>🛒 ' + n.buyers.toLocaleString('ja-JP') + '</span>' : '') +
+          (detail && detail.remainedChars > 0
+            ? '<span title="有料部分の文字数">📄 ' + detail.remainedChars.toLocaleString('ja-JP') + '字</span>'
+            : '') +
           '<span class="price">' + escapeHtml(formatPrice(n.price)) + '</span>' +
           (n.publishAt ? '<span>' + escapeHtml(formatDate(n.publishAt)) + '</span>' : '') +
         '</div>' +
@@ -540,22 +636,19 @@
    * 取れないのに絞り込めるように見せると嘘になるので、そのときは無効化して理由を出す。
    */
   function updateBoughtChips(pool) {
-    const available = hasBuyerData(pool);
-    const yesChip = el.boughtChips.querySelector('[data-bought="yes"]');
+    const progress = detailProgress(pool);
+    const boughtCount = pool.filter(isBought).length;
 
-    yesChip.disabled = !available && pool.length > 0;
-    el.boughtNote.textContent = !pool.length ? ''
-      : available ? ''
-      : 'noteは購入数を公開していません。「🔥 売れてる可能性大」＝ スキ＋コメント×' +
-        COMMENT_WEIGHT + ' が ' +
-        (isFinite(likelyThreshold) ? likelyThreshold : 20) + ' 以上の有料note（推定）。';
+    if (!pool.length) { el.boughtNote.textContent = ''; return; }
 
-    // 使えないのに選ばれたままにしない
-    if (yesChip.disabled && state.bought === 'yes') {
-      state.bought = 'all';
-      Array.prototype.forEach.call(el.boughtChips.children, function (c) {
-        c.classList.toggle('is-active', c.dataset.bought === 'all');
-      });
+    if (progress.total && progress.done < progress.total) {
+      el.boughtNote.textContent =
+        '購入状況を確認中… ' + progress.done + '/' + progress.total + '件';
+    } else if (progress.total) {
+      el.boughtNote.textContent =
+        'note公式の「買われています」表示と同じデータ。該当 ' + boughtCount + '件。';
+    } else {
+      el.boughtNote.textContent = '';
     }
   }
 
@@ -576,6 +669,7 @@
 
     const pool = dedupe(source);
     likelyThreshold = computeLikelyThreshold(pool);
+    enrichDetails(pool);
     updateBoughtChips(pool);
 
     const list = applySort(applyFilters(pool));

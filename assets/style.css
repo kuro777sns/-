@@ -503,6 +503,7 @@ a { color: inherit; }
   padding: 3px 10px;
   font-size: .7rem;
   font-weight: 700;
+  white-space: nowrap;
   background: rgba(255, 255, 255, .94);
   color: var(--ink);
   box-shadow: 0 2px 6px rgba(0, 0, 0, .08);
