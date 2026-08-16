@@ -11,8 +11,9 @@
 
   const API_BASE = 'https://note.com/api/v3/searches';
   const PAGE_SIZE = 20;          // 1回の検索で取る件数
-  const PAGES_PER_LOAD = 3;      // 1回の読み込みで、キーワードごとに何ページ分取るか
-  const DETAIL_LIMIT = 60;       // 購入状況を調べにいく上限（絞り込み後の上位から）
+  const PAGES_PER_LOAD = 4;      // 1回の読み込みで、キーワードごとに何ページ分取るか
+  const DETAIL_LIMIT = 300;      // 購入状況を調べにいく上限（絞り込み後の上位から）
+  const DETAIL_FAIL_LIMIT = 12;  // 続けてこの回数失敗したら、調べるのをやめる
   const FETCH_TIMEOUT = 12000;
   const PRICE_MAX = 10000;         // スライダーの右端。この値は「上限なし」の意味
   const DEFAULT_MIN_PRICE = 980;   // 初期の下限価格
@@ -25,7 +26,7 @@
 
   // 中継サーバーに負荷をかけすぎないよう、同時に投げる本数を絞る
   const SEARCH_CONCURRENCY = 5;
-  const DETAIL_CONCURRENCY = 3;
+  const DETAIL_CONCURRENCY = 5;
 
   // 中継候補（先頭 null = 直接アクセス）
   const PROXY_CANDIDATES = [
@@ -38,6 +39,7 @@
     favs:  'notesagashi:favs',
     proxy: 'notesagashi:proxy',
     demo:  'notesagashi:demo',
+    details: 'notesagashi:details',
   };
 
   const POPULAR_GENRE = {
@@ -375,6 +377,32 @@
 
   const details = Object.create(null);   // key -> { state, data }
   let rerenderTimer = null;
+  let saveTimer = null;
+  let consecutiveFails = 0;
+  let enrichStopped = false;
+
+  /* 同じ記事を何度も問い合わせないよう、タブを閉じるまで結果を残しておく */
+
+  function loadStoredDetails() {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(STORAGE.details) || '{}');
+      Object.keys(stored).forEach(function (k) {
+        details[k] = { state: 'ok', data: stored[k] };
+      });
+    } catch (e) { /* 壊れていたら無視して取り直す */ }
+  }
+
+  function persistDetails() {
+    if (saveTimer) return;
+    saveTimer = setTimeout(function () {
+      saveTimer = null;
+      const out = {};
+      Object.keys(details).forEach(function (k) {
+        if (details[k].state === 'ok') out[k] = details[k].data;
+      });
+      try { sessionStorage.setItem(STORAGE.details, JSON.stringify(out)); } catch (e) { /* 容量超過は無視 */ }
+    }, 2000);
+  }
 
   function pickDetail(json) {
     const d = (json && json.data) || extractNotes(json)[0] || json || {};
@@ -420,6 +448,8 @@
 
   /** まだ調べていない記事の詳細を、少しずつ取りにいく */
   function enrichDetails(list) {
+    if (enrichStopped) return;
+
     const queue = list.filter(function (n) {
       return !n.isDemo && n.key && !details[n.key];
     });
@@ -429,12 +459,20 @@
 
     let index = 0;
     function next() {
-      if (index >= queue.length) return;
+      if (index >= queue.length || enrichStopped) return;
       const note = queue[index++];
 
       fetchViaAnyRoute('https://note.com/api/v3/notes/' + note.key)
-        .then(function (json) { details[note.key] = { state: 'ok', data: pickDetail(json) }; })
-        .catch(function () { details[note.key] = { state: 'fail' }; })
+        .then(function (json) {
+          details[note.key] = { state: 'ok', data: pickDetail(json) };
+          consecutiveFails = 0;
+          persistDetails();
+        })
+        .catch(function () {
+          details[note.key] = { state: 'fail' };
+          // 中継サーバーに弾かれ続けているときは、投げ続けても無駄なので止める
+          if (++consecutiveFails >= DETAIL_FAIL_LIMIT) enrichStopped = true;
+        })
         .then(function () { scheduleRerender(); next(); });
     }
 
@@ -681,12 +719,17 @@
 
     if (!pool.length) { el.boughtNote.textContent = ''; return; }
 
-    if (progress.total && progress.done < progress.total) {
+    if (enrichStopped) {
       el.boughtNote.textContent =
-        '購入状況を確認中… ' + progress.done + '/' + progress.total + '件';
+        '中継サーバーに弾かれたため確認を中断しました（' + progress.done + '件まで確認、該当 ' +
+        boughtCount + '件）。⚙️設定で自分の中継URLを入れると最後まで調べられます。';
+    } else if (progress.total && progress.done < progress.total) {
+      el.boughtNote.textContent =
+        '購入状況を確認中… ' + progress.done + '/' + progress.total +
+        '件（見つかったものから順に表示しています）';
     } else if (progress.total) {
       el.boughtNote.textContent =
-        'note公式の「買われています」表示と同じデータ。上位' + progress.total +
+        'note公式の「買われています」表示と同じデータ。' + progress.total +
         '件を確認して該当 ' + boughtCount + '件。';
     } else {
       el.boughtNote.textContent = '';
@@ -726,7 +769,7 @@
 
     if (!list.length) {
       // 購入状況を調べている最中は「0件」ではなく進捗を出す
-      if (state.bought === 'yes' && progress.done < progress.total) {
+      if (state.bought === 'yes' && !enrichStopped && progress.done < progress.total) {
         el.cardGrid.innerHTML =
           '<div class="empty"><span class="empty-emoji" aria-hidden="true">🔎</span>' +
           '<p>買われているnoteを探しています…</p>' +
@@ -740,6 +783,7 @@
           : state.bought === 'yes' ? '買われているnoteが見つかりませんでした'
           : '条件に合うnoteが見つかりませんでした',
         state.favOnly ? 'カードの☆を押すとここに貯まります'
+          : enrichStopped ? '中継サーバーに弾かれて購入状況を調べきれませんでした。⚙️設定から自分の中継URLを設定するか、「すべて」に切り替えてください'
           : state.bought === 'yes' ? '「すべて」に切り替えるか、価格の下限を下げてみてください'
           : '絞り込みをゆるめるか、別のジャンルを試してみてください'
       );
@@ -1510,6 +1554,7 @@
 
   /* ---------- 起動 ---------- */
 
+  loadStoredDetails();
   readHash();
   renderGenres();
   syncPriceRange();
