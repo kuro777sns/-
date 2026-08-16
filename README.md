@@ -105,26 +105,23 @@ note.com 側の設定によっては、ブラウザから直接APIを読めな�
 https://自分のワーカー.example.workers.dev/?url={url}
 ```
 
-Cloudflare Workers を使う場合の最小構成の例：
+### 自前の中継サーバーを立てる（推奨）
 
-```js
-export default {
-  async fetch(request) {
-    const target = new URL(request.url).searchParams.get('url');
-    if (!target || !target.startsWith('https://note.com/')) {
-      return new Response('bad request', { status: 400 });
-    }
-    const res = await fetch(target, { headers: { Accept: 'application/json' } });
-    return new Response(res.body, {
-      status: res.status,
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
-  },
-};
+公開の中継サービス（corsproxy.io など）は共用のため、
+購入状況を300件ぶん調べるような使い方だと途中で弾かれます。
+自分専用の中継を Cloudflare Workers に置くと、この制限がなくなります。無料枠で足ります。
+
+コードは **[`worker/note-proxy.js`](worker/note-proxy.js)** にあります。
+これを Cloudflare Workers に貼り付けてデプロイし、発行されたURLを
+
 ```
+https://<自分のワーカー名>.workers.dev/?url={url}
+```
+
+の形でアプリの ⚙️設定 → CORSプロキシ に登録するだけです。
+
+note.com 以外へは中継しない作りなので、URLを知られても踏み台にはなりません。
+同じURLの結果を5分間キャッシュするので、note側への負荷も抑えられます。
 
 ### note の検索APIが返すもの（実測）
 
@@ -210,6 +207,7 @@ assets/app.js         検索・絞り込み・描画・お気に入り
 assets/genres.js      ジャンル定義（絵文字・名前・検索キーワード）
 assets/analyzer.js    セールスレター分析（12要素の判定ルール）
 assets/sample-data.js デモデータ（実在の記事ではありません）
+worker/note-proxy.js  自前の中継サーバー用コード（Cloudflare Workers）
 ```
 
 ### 分析の判定ルールを変える
