@@ -14,9 +14,9 @@
   // 自前の中継サーバーを登録している場合は、遠慮せずたくさん取りにいく。
   // 公開の共用サービス頼みのときは弾かれるので控えめにする。
   const PAGES_PER_LOAD = 4;      // 共用の中継のとき、キーワードごとに取るページ数
-  const PAGES_PER_LOAD_DEEP = 12;// 自前の中継があるとき
+  const PAGES_PER_LOAD_DEEP = 6; // 自前の中継があるとき（増やしすぎるとnote側に弾かれる）
   const DETAIL_LIMIT = 300;      // 購入状況を調べにいく上限（共用の中継のとき）
-  const DETAIL_LIMIT_DEEP = 900; // 自前の中継があるとき
+  const DETAIL_LIMIT_DEEP = 600; // 自前の中継があるとき
   const DETAIL_FAIL_LIMIT = 12;  // 続けてこの回数失敗したら、調べるのをやめる
   const FETCH_TIMEOUT = 12000;
   const PRICE_MAX = 10000;         // スライダーの右端。この値は「上限なし」の意味
@@ -29,7 +29,7 @@
   ];
 
   // 中継サーバーに負荷をかけすぎないよう、同時に投げる本数を絞る
-  const SEARCH_CONCURRENCY = 5;
+  const SEARCH_CONCURRENCY = 4;
   const DETAIL_CONCURRENCY = 5;
 
   // 中継候補（先頭 null = 直接アクセス）
@@ -90,6 +90,7 @@
     demo: localStorage.getItem(STORAGE.demo) === '1',
   };
   let workingProxy;   // 一度成功した中継を覚えておく（undefined = 未確定）
+  let lastFetchStats = { total: 0, failed: 0 };   // 直近の取得で何本失敗したか
 
   /* ---------- DOM ---------- */
 
@@ -372,16 +373,24 @@
       for (let i = 0; i < pages; i++) {
         const start = (page * pages + i) * PAGE_SIZE;
         jobs.push(function () {
-          // 1本失敗しても他が生きていれば表示する
-          return fetchViaAnyRoute(buildUrl(q, start, apiSort))
+          const url = buildUrl(q, start, apiSort);
+          // 混み合って弾かれることがあるので、一度だけ間をおいて取り直す
+          return fetchViaAnyRoute(url)
+            .catch(function () {
+              return new Promise(function (resolve) { setTimeout(resolve, 900); })
+                .then(function () { return fetchViaAnyRoute(url); });
+            })
             .then(function (json) { return extractNotes(json); })
-            .catch(function () { return null; });
+            .catch(function () { return null; });   // それでも駄目なら他の結果で表示する
         });
       }
     });
 
     return runLimited(jobs, SEARCH_CONCURRENCY).then(function (results) {
-      if (results.every(function (r) { return r === null; })) {
+      const failed = results.filter(function (r) { return r === null; }).length;
+      lastFetchStats = { total: results.length, failed: failed };
+
+      if (failed === results.length) {
         throw new Error('note.com からデータを取得できませんでした');
       }
       const merged = [];
@@ -1020,6 +1029,11 @@
 
         if (!state.items.length) {
           setStatus('info', '🔎', '<p>結果が0件でした。別のキーワードで試してみてください。</p>');
+        } else if (lastFetchStats.failed > lastFetchStats.total / 2) {
+          setStatus('warn', '⚠️',
+            '<p>検索' + lastFetchStats.total + '本のうち' + lastFetchStats.failed +
+            '本が取得できませんでした（note側に一時的に弾かれている可能性があります）。</p>' +
+            '<p>少し時間をおいてページを再読み込みすると改善することがあります。</p>');
         } else {
           setStatus(null);
         }
