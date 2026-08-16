@@ -138,9 +138,21 @@
   <section class="section">
     <h2 class="section-title"><span aria-hidden="true">📝</span> セールスレター分析</h2>
     <p class="lead">
-      noteの無料部分（販売ページ）をまるごとコピーして貼り付けてください。
+      noteのURLを貼るか、無料部分（販売ページ）をコピーして貼り付けてください。
       売れているレターに入っている12の要素がそろっているかを判定して、足りないパートと直し方を出します。
     </p>
+
+    <div class="url-row">
+      <input
+        type="url"
+        id="letterUrl"
+        class="url-input"
+        placeholder="noteのURLを貼り付け（https://note.com/○○○/n/n○○○○）"
+        autocomplete="off"
+        aria-label="noteのURL">
+      <button class="btn btn-primary" id="letterFetch" type="button">取り込む 📥</button>
+    </div>
+    <p class="url-status" id="letterUrlStatus"></p>
 
     <textarea
       id="letterInput"

@@ -494,8 +494,8 @@ a { color: inherit; }
   display: flex;
   gap: 5px;
   flex-wrap: wrap;
-  /* お気に入りボタンの下に潜り込まないように */
-  max-width: calc(100% - 58px);
+  /* 右上のボタン群の下に潜り込まないように */
+  max-width: calc(100% - 122px);
 }
 
 .badge {
@@ -665,6 +665,57 @@ a { color: inherit; }
   color: var(--ink-soft);
   line-height: 1.8;
 }
+
+.url-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.url-input {
+  flex: 1;
+  min-width: 200px;
+  border: 2px solid var(--pink-soft);
+  border-radius: 999px;
+  padding: 11px 18px;
+  font-family: inherit;
+  font-size: .87rem;
+  color: var(--ink);
+  background: var(--white);
+  outline: none;
+  box-shadow: var(--shadow);
+}
+.url-input:focus { border-color: var(--pink); }
+.url-input::placeholder { color: #C9B6BE; }
+
+.url-status {
+  margin: 0 0 10px;
+  font-size: .78rem;
+  line-height: 1.7;
+  color: var(--ink-soft);
+}
+.url-status:empty { display: none; }
+.url-status.is-error { color: #B03A5B; }
+.url-status.is-ok { color: #2E7D6B; }
+
+.analyze-btn {
+  position: absolute;
+  top: 8px; right: 50px;
+  border: none;
+  border-radius: 999px;
+  height: 34px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, .94);
+  font-family: inherit;
+  font-size: .72rem;
+  font-weight: 700;
+  color: var(--pink-deep);
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+  transition: transform .16s ease;
+}
+.analyze-btn:hover { transform: scale(1.06); }
 
 .letter-input {
   width: 100%;

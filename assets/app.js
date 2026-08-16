@@ -98,6 +98,9 @@
     letterRun:   document.getElementById('letterRun'),
     letterClear: document.getElementById('letterClear'),
     letterResult: document.getElementById('letterResult'),
+    letterUrl:   document.getElementById('letterUrl'),
+    letterFetch: document.getElementById('letterFetch'),
+    letterUrlStatus: document.getElementById('letterUrlStatus'),
     favToggle:   document.getElementById('favToggle'),
     favCount:    document.getElementById('favCount'),
     settingsBtn: document.getElementById('settingsBtn'),
@@ -177,28 +180,32 @@
       .replace('{url}', encodeURIComponent(url));
   }
 
-  function fetchJson(url) {
+  function fetchText(url) {
     const controller = new AbortController();
     const timer = setTimeout(function () { controller.abort(); }, FETCH_TIMEOUT);
-    return fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' } })
+    return fetch(url, { signal: controller.signal })
       .then(function (res) {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.text();
       })
-      .then(function (text) {
-        try {
-          return JSON.parse(text);
-        } catch (e) {
-          throw new Error('JSONとして読めませんでした');
-        }
-      })
       .finally(function () { clearTimeout(timer); });
+  }
+
+  function fetchJson(url) {
+    return fetchText(url).then(function (text) {
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        throw new Error('JSONとして読めませんでした');
+      }
+    });
   }
 
   /**
    * 中継候補を順に試す。成功した中継は workingProxy に記憶する。
+   * asText を立てると、JSONではなく生テキスト（HTMLなど）で受け取る。
    */
-  function fetchViaAnyRoute(targetUrl) {
+  function fetchViaAnyRoute(targetUrl, asText) {
     const routes = [];
     if (settings.proxy) routes.push(settings.proxy);
     if (workingProxy !== undefined && routes.indexOf(workingProxy) === -1) routes.push(workingProxy);
@@ -211,9 +218,10 @@
     return routes.reduce(function (chain, route) {
       return chain.catch(function (err) {
         lastError = err;
-        return fetchJson(applyProxy(route, targetUrl)).then(function (json) {
+        const get = asText ? fetchText : fetchJson;
+        return get(applyProxy(route, targetUrl)).then(function (result) {
           workingProxy = route;
-          return json;
+          return result;
         });
       });
     }, Promise.reject(lastError));
@@ -486,6 +494,10 @@
             : '') +
           (isHot ? '<span class="badge hot">🔥 売れ筋</span>' : '') +
         '</div>' +
+        // デモ記事は実在しないので分析ボタンは出さない
+        (n.isDemo ? '' :
+          '<button type="button" class="analyze-btn" data-analyze="' + escapeHtml(n.url) + '"' +
+          ' title="このnoteのセールスレターを分析する">📝 分析</button>') +
         '<button type="button" class="fav-btn' + (isFav ? ' is-on' : '') + '"' +
           ' data-fav="' + escapeHtml(n.id) + '"' +
           ' aria-pressed="' + (isFav ? 'true' : 'false') + '"' +
@@ -727,6 +739,23 @@
     });
   }
 
+  /* ---------- タブ ---------- */
+
+  function switchTab(name) {
+    const isSearch = name === 'search';
+
+    Array.prototype.forEach.call(el.tabs.children, function (t) {
+      const on = t.dataset.tab === name;
+      t.classList.toggle('is-active', on);
+      t.setAttribute('aria-selected', String(on));
+    });
+
+    el.searchPane.hidden = !isSearch;
+    el.letterPane.hidden = isSearch;
+    el.searchForm.hidden = !isSearch;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   /* ---------- 価格帯スライダー ---------- */
 
   function syncPriceRange() {
@@ -757,6 +786,45 @@
    * note.com が実際に返してくるフィールドを見る。
    * 「購入数が取れない」ことを推測ではなく事実として確認するための道具。
    */
+  /** 1つの記事オブジェクトについて、購入数まわりを中心に中身を書き出す */
+  function describeNoteObject(obj) {
+    if (!obj || typeof obj !== 'object') return '（データなし）';
+
+    const keys = Object.keys(obj).sort();
+    const nums = keys.filter(function (k) { return typeof obj[k] === 'number'; });
+    const bools = keys.filter(function (k) { return typeof obj[k] === 'boolean'; });
+    const exact = BUYER_KEYS.filter(function (k) { return k in obj; });
+    // 名前に buy / purchase / sale / sold が入るキーを広めに拾う
+    const fuzzy = keys.filter(function (k) {
+      return /buy|purchas|sale|sold|order/i.test(k) && exact.indexOf(k) === -1;
+    });
+
+    const lines = [];
+    lines.push('項目数: ' + keys.length);
+    lines.push('');
+    lines.push('■ 購入数のデータ');
+    lines.push(exact.length
+      ? '✅ あります → ' + exact.map(function (k) { return k + '=' + obj[k]; }).join(', ')
+      : '❌ ありません');
+    if (fuzzy.length) {
+      lines.push('  （購入まわりの項目: ' +
+        fuzzy.map(function (k) { return k + '=' + JSON.stringify(obj[k]); }).join(', ') + '）');
+    }
+    lines.push('');
+    lines.push('■ 数値の項目');
+    lines.push(nums.length
+      ? nums.map(function (k) { return '  ' + k + ' : ' + obj[k]; }).join('\n') : '  なし');
+    if (bools.length) {
+      lines.push('');
+      lines.push('■ true/false の項目');
+      lines.push('  ' + bools.map(function (k) { return k + '=' + obj[k]; }).join(', '));
+    }
+    lines.push('');
+    lines.push('■ キー全部');
+    lines.push('  ' + keys.join(', '));
+    return lines.join('\n');
+  }
+
   function runDiagnostics() {
     el.diagOut.hidden = false;
     el.diagOut.textContent = '調べています…';
@@ -774,29 +842,31 @@
         if (!first) {
           out.push('');
           out.push('⚠️ 記事オブジェクトが見つかりませんでした。レスポンスの形が変わった可能性があります。');
-        } else {
-          const keys = Object.keys(first).sort();
-          const nums = keys.filter(function (k) { return typeof first[k] === 'number'; });
-          const hits = BUYER_KEYS.filter(function (k) { return k in first; });
-
-          out.push('');
-          out.push('■ 購入数のデータ');
-          out.push(hits.length
-            ? '✅ あります → ' + hits.join(', ')
-            : '❌ ありません（noteは購入数を公開していません）');
-
-          out.push('');
-          out.push('■ 数値で返ってくる項目');
-          out.push(nums.length
-            ? nums.map(function (k) { return '  ' + k + ' : ' + first[k]; }).join('\n')
-            : '  なし');
-
-          out.push('');
-          out.push('■ 1件目のキー全部（' + keys.length + '個）');
-          out.push('  ' + keys.join(', '));
+          el.diagOut.textContent = out.join('\n');
+          return;
         }
 
+        out.push('');
+        out.push('=== ① 検索API ===');
+        out.push(describeNoteObject(first));
+        out.push('');
+        out.push('=== ② 記事詳細API（' + first.key + '） ===');
+        out.push('調べています…');
         el.diagOut.textContent = out.join('\n');
+
+        // 検索APIより詳細APIのほうが項目が多い可能性があるので、そちらも見る
+        return fetchViaAnyRoute('https://note.com/api/v3/notes/' + first.key)
+          .then(function (detail) {
+            const obj = extractNotes(detail)[0] || (detail && detail.data) || detail;
+            out.pop();
+            out.push(describeNoteObject(obj));
+            el.diagOut.textContent = out.join('\n');
+          })
+          .catch(function (e) {
+            out.pop();
+            out.push('❌ 取得できませんでした（' + e.message + '）');
+            el.diagOut.textContent = out.join('\n');
+          });
       })
       .catch(function (err) {
         el.diagOut.textContent =
@@ -804,6 +874,92 @@
           '理由: ' + err.message + '\n\n' +
           'ブラウザからの直接アクセスがCORSでブロックされている可能性が高いです。\n' +
           '上の「CORSプロキシ」に中継URLを設定すると読めるようになります。';
+      });
+  }
+
+  /* ---------- noteのURLから本文を取り込む ---------- */
+
+  /** https://note.com/xxx/n/nabc123 → nabc123 */
+  function parseNoteKey(input) {
+    const s = String(input || '').trim();
+    const m = s.match(/\/n\/([A-Za-z0-9_-]+)/);
+    if (m) return m[1];
+    if (/^n[A-Za-z0-9]{6,}$/.test(s)) return s;   // キーだけ貼られた場合
+    return null;
+  }
+
+  /** タグを消して、段落の区切りだけ改行に残す */
+  function htmlToText(html) {
+    const withBreaks = String(html || '')
+      .replace(/<\s*(script|style)[\s\S]*?<\/\s*\1\s*>/gi, '')
+      .replace(/<\s*br\s*\/?>/gi, '\n')
+      .replace(/<\/\s*(p|div|h[1-6]|li|section|article|blockquote|tr)\s*>/gi, '\n\n')
+      .replace(/<[^>]+>/g, '');
+
+    // 実体参照（&nbsp; など）を戻す。タグは既に落としてあるので安全
+    const box = document.createElement('textarea');
+    box.innerHTML = withBreaks;
+    return box.value.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  /** JSONのどこかにある一番長い body を探す */
+  function findBody(json) {
+    let best = '';
+    (function walk(v, depth) {
+      if (!v || depth > 6 || typeof v !== 'object') return;
+      if (Array.isArray(v)) { v.forEach(function (x) { walk(x, depth + 1); }); return; }
+      Object.keys(v).forEach(function (k) {
+        const val = v[k];
+        if ((k === 'body' || k === 'free_body' || k === 'note_body') &&
+            typeof val === 'string' && val.length > best.length) {
+          best = val;
+        } else {
+          walk(val, depth + 1);
+        }
+      });
+    })(json, 0);
+    return best;
+  }
+
+  /** 記事ページのHTMLから本文らしいところを抜く */
+  function extractFromPage(html) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const container =
+      doc.querySelector('.note-common-styles__textnote-body') ||
+      doc.querySelector('[class*="textnote-body"]') ||
+      doc.querySelector('article') ||
+      doc.querySelector('main');
+
+    const title = (doc.querySelector('h1') || {}).textContent || doc.title || '';
+    const body = container ? htmlToText(container.innerHTML) : '';
+    return { title: title.trim(), body: body };
+  }
+
+  /**
+   * noteのURLから本文テキストを取る。
+   * まずAPI、だめなら記事ページのHTMLを読む。
+   */
+  function fetchNoteText(url) {
+    const key = parseNoteKey(url);
+    if (!key) {
+      return Promise.reject(new Error('noteのURLとして読み取れませんでした'));
+    }
+
+    return fetchViaAnyRoute('https://note.com/api/v3/notes/' + key)
+      .then(function (json) {
+        const body = htmlToText(findBody(json));
+        if (body.length < 50) throw new Error('本文が取れませんでした');
+        const notes = extractNotes(json);
+        return { title: (notes[0] && (notes[0].name || notes[0].title)) || '', body: body, via: 'API' };
+      })
+      .catch(function () {
+        // APIがだめなら記事ページそのものを読む
+        const pageUrl = /^https?:\/\//.test(url) ? url : 'https://note.com/n/' + key;
+        return fetchViaAnyRoute(pageUrl, true).then(function (html) {
+          const got = extractFromPage(html);
+          if (got.body.length < 50) throw new Error('本文が見つかりませんでした');
+          return { title: got.title, body: got.body, via: 'ページ' };
+        });
       });
   }
 
@@ -881,6 +1037,53 @@
     el.letterResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  function runAnalysis() {
+    const text = el.letterInput.value.trim();
+    if (text.length < 100) {
+      el.letterResult.innerHTML =
+        '<div class="advice-box"><h3>📋 もう少し貼り付けてください</h3>' +
+        '<p style="margin:0;font-size:.85rem;line-height:1.8">' +
+        '判定には100字以上必要です。noteのURLを貼って「取り込む」を押すか、' +
+        '無料部分をまるごとコピーして貼ってください。</p></div>';
+      return;
+    }
+    renderLetterResult(window.analyzeLetter(text));
+  }
+
+  function setUrlStatus(kind, message) {
+    el.letterUrlStatus.className = 'url-status' + (kind ? ' is-' + kind : '');
+    el.letterUrlStatus.textContent = message || '';
+  }
+
+  /** URLを取り込んで、そのまま分析まで走らせる */
+  function importFromUrl(url) {
+    if (!url) { setUrlStatus('error', 'noteのURLを入力してください。'); return; }
+
+    el.letterFetch.disabled = true;
+    setUrlStatus('', '読み込んでいます…');
+
+    fetchNoteText(url)
+      .then(function (got) {
+        el.letterInput.value = (got.title ? got.title + '\n\n' : '') + got.body;
+        el.letterCount.textContent = el.letterInput.value.length.toLocaleString('ja-JP') + '字';
+        setUrlStatus('ok', '✅ 取り込みました（' + got.via + '経由 / ' +
+          got.body.length.toLocaleString('ja-JP') + '字）。有料noteの場合、読めるのは無料部分だけです。');
+        runAnalysis();
+      })
+      .catch(function (err) {
+        setUrlStatus('error', '❌ 取り込めませんでした：' + err.message +
+          ' — 記事ページを開いて本文をコピーし、下の欄に直接貼り付けてください。');
+      })
+      .finally(function () { el.letterFetch.disabled = false; });
+  }
+
+  /** 検索結果からこのnoteを分析タブに送る */
+  function analyzeNote(url) {
+    switchTab('letter');
+    el.letterUrl.value = url;
+    importFromUrl(url);
+  }
+
   function bindLetterEvents() {
     function updateCount() {
       el.letterCount.textContent = el.letterInput.value.length.toLocaleString('ja-JP') + '字';
@@ -888,21 +1091,21 @@
 
     el.letterInput.addEventListener('input', updateCount);
 
-    el.letterRun.addEventListener('click', function () {
-      const text = el.letterInput.value.trim();
-      if (text.length < 100) {
-        el.letterResult.innerHTML =
-          '<div class="advice-box"><h3>📋 もう少し貼り付けてください</h3>' +
-          '<p style="margin:0;font-size:.85rem;line-height:1.8">' +
-          '判定には100字以上必要です。noteの無料部分をまるごとコピーして貼るのがおすすめです。</p></div>';
-        return;
-      }
-      renderLetterResult(window.analyzeLetter(text));
+    el.letterFetch.addEventListener('click', function () {
+      importFromUrl(el.letterUrl.value.trim());
     });
+
+    el.letterUrl.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); importFromUrl(el.letterUrl.value.trim()); }
+    });
+
+    el.letterRun.addEventListener('click', runAnalysis);
 
     el.letterClear.addEventListener('click', function () {
       el.letterInput.value = '';
+      el.letterUrl.value = '';
       el.letterResult.innerHTML = '';
+      setUrlStatus('', '');
       updateCount();
       el.letterInput.focus();
     });
@@ -912,18 +1115,7 @@
     // タブ
     el.tabs.addEventListener('click', function (e) {
       const btn = e.target.closest('.tab');
-      if (!btn) return;
-      const isSearch = btn.dataset.tab === 'search';
-
-      Array.prototype.forEach.call(el.tabs.children, function (t) {
-        const on = t === btn;
-        t.classList.toggle('is-active', on);
-        t.setAttribute('aria-selected', String(on));
-      });
-
-      el.searchPane.hidden = !isSearch;
-      el.letterPane.hidden = isSearch;
-      el.searchForm.hidden = !isSearch;
+      if (btn) switchTab(btn.dataset.tab);
     });
 
     // 価格帯スライダー
@@ -972,8 +1164,11 @@
       else load(!state.favOnly);
     });
 
-    // お気に入り登録（カードは差し替わるのでイベント委譲）
+    // カード内のボタン（カードは差し替わるのでイベント委譲）
     el.cardGrid.addEventListener('click', function (e) {
+      const analyzeBtn = e.target.closest('.analyze-btn');
+      if (analyzeBtn) { analyzeNote(analyzeBtn.dataset.analyze); return; }
+
       const btn = e.target.closest('.fav-btn');
       if (!btn) return;
       const id = btn.dataset.fav;
