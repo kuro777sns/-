@@ -56,7 +56,7 @@
     query: '',        // キーワード検索（入力があればジャンルより優先）
     sort: 'selling',
     price: 'paid',         // 無料noteは初期状態では出さない
-    period: 'all',
+    period: '7',           // 直近1週間の記事から探す
     bought: 'yes',         // 初期状態から「買われています」だけを出す
     priceMin: DEFAULT_MIN_PRICE,
     priceMax: PRICE_MAX,   // PRICE_MAX = 上限なし
@@ -330,7 +330,11 @@
   function fetchPage(page) {
     const genre = genreById(state.genreId);
     const queries = state.query ? [state.query] : genre.queries;
-    const apiSort = state.sort === 'new' ? 'new' : 'popular';
+
+    // 期間を短く絞っているときに人気順で取ると古い記事ばかり返ってくるので、
+    // そのときは新着順で取ってきて、並べ替えは手元でやる
+    const shortPeriod = state.period !== 'all' && Number(state.period) <= 30;
+    const apiSort = (state.sort === 'new' || shortPeriod) ? 'new' : 'popular';
 
     const jobs = [];
     queries.forEach(function (q) {
@@ -1432,7 +1436,8 @@
     // 絞り込み（sort だけ再取得、他は手元で絞る）
     bindChipGroup(el.sortChips, 'sort', function () { syncHash(); load(true); });
     bindChipGroup(el.priceChips, 'price', render);
-    bindChipGroup(el.periodChips, 'period', render);
+    // 期間によって取得の仕方（人気順／新着順）が変わるので取り直す
+    bindChipGroup(el.periodChips, 'period', function () { load(true); });
     bindChipGroup(el.boughtChips, 'bought', render);
 
     // お気に入り表示切替
