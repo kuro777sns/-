@@ -580,6 +580,7 @@ a { color: inherit; }
   border-top: 1px dashed var(--line);
 }
 .card-meta .likes { color: var(--pink-deep); font-weight: 700; }
+.card-meta .comments { color: #6A4FBF; font-weight: 700; }
 .card-meta .price { color: var(--ink); font-weight: 700; }
 
 .score-bar {

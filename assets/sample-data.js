@@ -53,6 +53,7 @@
       authorUrl: 'https://note.com/',
       authorIcon: '',
       likes: likes,
+      comments: i % 3 === 0 ? 0 : Math.round(likes / (30 + (i % 7) * 6)),
       price: price,
       // 有料noteだけ購入数を持たせている（デモ用のサンプル値）
       buyers: price > 0 ? Math.max(1, Math.round(likes / (6 + (i % 5)))) : null,

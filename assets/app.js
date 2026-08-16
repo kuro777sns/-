@@ -275,6 +275,7 @@
       authorUrl: urlname ? 'https://note.com/' + urlname : 'https://note.com/',
       authorIcon: user.user_profile_image_path || user.profile_image_path || '',
       likes: Number(n.like_count || n.likeCount || 0),
+      comments: Number(n.comment_count || n.commentCount || 0),
       price: Number(n.price || 0),
       buyers: extractBuyers(n),
       publishAt: n.publish_at || n.publishAt || n.created_at || '',
@@ -315,12 +316,23 @@
      ============================================================ */
 
   /**
+   * 反応の大きさ。
+   * 有料noteにわざわざコメントする人は購入者である可能性が高いので、
+   * コメント1件をスキ5個ぶんとして数える。
+   */
+  const COMMENT_WEIGHT = 5;
+
+  function engagement(note) {
+    return note.likes + note.comments * COMMENT_WEIGHT;
+  }
+
+  /**
    * 売れ筋スコアの元になる値。
    * 購入数が取れる記事はそれを最優先で使い、取れなければ推定に落とす。
    */
   function rawScore(note) {
     if (note.buyers !== null && note.price > 0) return note.price * note.buyers * 10;
-    return note.price > 0 ? note.price * note.likes : note.likes;
+    return note.price > 0 ? note.price * engagement(note) : engagement(note);
   }
 
   /** この結果セットで購入数が取れているか */
@@ -335,19 +347,19 @@
   let likelyThreshold = Infinity;
 
   function computeLikelyThreshold(pool) {
-    const paidLikes = pool
+    const paid = pool
       .filter(function (n) { return n.price > 0; })
-      .map(function (n) { return n.likes; })
+      .map(engagement)
       .sort(function (a, b) { return b - a; });
 
-    if (!paidLikes.length) return Infinity;
+    if (!paid.length) return Infinity;
 
     // 件数が少ないうちは中央値、多ければ上位3分の1のライン
-    const idx = paidLikes.length < 6
-      ? Math.floor((paidLikes.length - 1) / 2)
-      : Math.floor(paidLikes.length / 3);
+    const idx = paid.length < 6
+      ? Math.floor((paid.length - 1) / 2)
+      : Math.floor(paid.length / 3);
 
-    return Math.max(20, paidLikes[idx]);
+    return Math.max(20, paid[idx]);
   }
 
   function applyFilters(items) {
@@ -366,7 +378,7 @@
       }
 
       if (state.bought === 'yes' && !(n.buyers !== null && n.buyers > 0)) return false;
-      if (state.bought === 'likely' && !(n.price > 0 && n.likes >= likelyThreshold)) return false;
+      if (state.bought === 'likely' && !(n.price > 0 && engagement(n) >= likelyThreshold)) return false;
 
       if (periodDays && n.publishAt) {
         const t = Date.parse(n.publishAt);
@@ -454,6 +466,7 @@
     const paid = n.price > 0;
     const scoreLabel = !paid ? '人気度'
       : n.buyers !== null ? '売れ筋スコア（実売ベース）'
+      : n.comments > 0 ? '売れ筋スコア（コメント込み推定）'
       : '売れ筋スコア（推定）';
 
     const thumb = n.thumb
@@ -489,6 +502,7 @@
         '<div class="score-bar"><span style="width:' + scorePct + '%"></span></div>' +
         '<div class="card-meta">' +
           '<span class="likes">♡ ' + n.likes.toLocaleString('ja-JP') + '</span>' +
+          (n.comments > 0 ? '<span class="comments">💬 ' + n.comments.toLocaleString('ja-JP') + '</span>' : '') +
           (n.buyers !== null ? '<span>🛒 ' + n.buyers.toLocaleString('ja-JP') + '</span>' : '') +
           '<span class="price">' + escapeHtml(formatPrice(n.price)) + '</span>' +
           (n.publishAt ? '<span>' + escapeHtml(formatDate(n.publishAt)) + '</span>' : '') +
@@ -517,8 +531,9 @@
     yesChip.disabled = !available && pool.length > 0;
     el.boughtNote.textContent = !pool.length ? ''
       : available ? ''
-      : 'noteは購入数を公開していないため取得できません。「🔥 売れてる可能性大」＝有料 × スキ' +
-        (isFinite(likelyThreshold) ? likelyThreshold : 20) + '以上での推定です。';
+      : 'noteは購入数を公開していません。「🔥 売れてる可能性大」＝ スキ＋コメント×' +
+        COMMENT_WEIGHT + ' が ' +
+        (isFinite(likelyThreshold) ? likelyThreshold : 20) + ' 以上の有料note（推定）。';
 
     // 使えないのに選ばれたままにしない
     if (yesChip.disabled && state.bought === 'yes') {
