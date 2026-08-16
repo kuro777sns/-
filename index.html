@@ -101,6 +101,18 @@
     </div>
 
     <div class="filter-row">
+      <span class="filter-label">下限</span>
+      <div class="chips" id="pminChips" role="group" aria-label="価格の下限">
+        <button class="chip" data-pmin="0" type="button">なし</button>
+        <button class="chip" data-pmin="500" type="button">¥500〜</button>
+        <button class="chip is-active" data-pmin="980" type="button">¥980〜</button>
+        <button class="chip" data-pmin="1980" type="button">¥1,980〜</button>
+        <button class="chip" data-pmin="2980" type="button">¥2,980〜</button>
+        <button class="chip" data-pmin="4980" type="button">¥4,980〜</button>
+      </div>
+    </div>
+
+    <div class="filter-row">
       <span class="filter-label">投稿時期</span>
       <div class="chips" id="periodChips" role="group" aria-label="投稿時期">
         <button class="chip is-active" data-period="all" type="button">全期間</button>
@@ -137,6 +149,8 @@
       </h2>
       <p class="result-count" id="resultCount"></p>
     </div>
+
+    <div class="stats-bar" id="statsBar"></div>
 
     <div class="status" id="status" role="status" aria-live="polite"></div>
     <div class="card-grid" id="cardGrid"></div>

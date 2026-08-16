@@ -50,7 +50,15 @@
     queries: ['副業', 'ChatGPT', '恋愛', 'エッセイ', '働き方'],
   };
 
-  const GENRES = [POPULAR_GENRE].concat(window.GENRES || []);
+  // ジャンルを問わず横断で探す枠。各ジャンルの代表キーワードを1本ずつ束ねる
+  const ALL_GENRE = {
+    id: 'all',
+    emoji: '🌏',
+    name: '全ジャンル横断',
+    queries: (window.GENRES || []).map(function (g) { return g.queries[0]; }),
+  };
+
+  const GENRES = [POPULAR_GENRE, ALL_GENRE].concat(window.GENRES || []);
 
   /* ---------- 状態 ---------- */
 
@@ -92,6 +100,8 @@
     searchInput: document.getElementById('searchInput'),
     sortChips:   document.getElementById('sortChips'),
     priceChips:  document.getElementById('priceChips'),
+    pminChips:   document.getElementById('pminChips'),
+    statsBar:    document.getElementById('statsBar'),
     periodChips: document.getElementById('periodChips'),
     boughtChips: document.getElementById('boughtChips'),
     boughtNote:  document.getElementById('boughtNote'),
@@ -344,10 +354,13 @@
     const shortPeriod = state.period !== 'all' && Number(state.period) <= 30;
     const apiSort = (state.sort === 'new' || shortPeriod) ? 'new' : 'popular';
 
+    // キーワードが多い枠で全ページ取ると通信が膨らむので、そのぶんページ数を減らす
+    const pages = queries.length > 10 ? 2 : PAGES_PER_LOAD;
+
     const jobs = [];
     queries.forEach(function (q) {
-      for (let i = 0; i < PAGES_PER_LOAD; i++) {
-        const start = (page * PAGES_PER_LOAD + i) * PAGE_SIZE;
+      for (let i = 0; i < pages; i++) {
+        const start = (page * pages + i) * PAGE_SIZE;
         jobs.push(function () {
           // 1本失敗しても他が生きていれば表示する
           return fetchViaAnyRoute(buildUrl(q, start, apiSort))
@@ -781,6 +794,41 @@
     }
   }
 
+  /**
+   * 件数の内訳を出す。
+   * 「条件に合うのが何件で、そのうち実際に売れているのが何件か」が
+   * ひと目で分かるようにする。
+   */
+  function renderStats(candidates, boughtList, progress) {
+    if (!candidates.length) { el.statsBar.innerHTML = ''; return; }
+
+    const prices = boughtList.length
+      ? boughtList.map(function (n) { return n.price; })
+      : candidates.map(function (n) { return n.price; });
+    const paidPrices = prices.filter(function (p) { return p > 0; });
+
+    const avg = paidPrices.length
+      ? Math.round(paidPrices.reduce(function (a, b) { return a + b; }, 0) / paidPrices.length)
+      : 0;
+    const max = paidPrices.length ? Math.max.apply(null, paidPrices) : 0;
+    const rate = progress.done ? Math.round((boughtList.length / progress.done) * 100) : 0;
+
+    const boxes = [
+      ['条件に合うnote', candidates.length.toLocaleString('ja-JP') + '件', false],
+      ['購入状況を確認', progress.done.toLocaleString('ja-JP') + '件', false],
+      ['🔥 買われています', boughtList.length.toLocaleString('ja-JP') + '件', true],
+      ['売れている割合', rate + '%', false],
+      ['平均価格', '¥' + avg.toLocaleString('ja-JP'), false],
+      ['最高価格', '¥' + max.toLocaleString('ja-JP'), false],
+    ];
+
+    el.statsBar.innerHTML = boxes.map(function (b) {
+      return '<div class="stat-box' + (b[2] ? ' is-hot' : '') + '">' +
+        '<span class="stat-num">' + escapeHtml(b[1]) + '</span>' +
+        '<span class="stat-label">' + escapeHtml(b[0]) + '</span></div>';
+    }).join('');
+  }
+
   function render() {
     el.filtersSummary.textContent = filtersSummaryText();
 
@@ -808,9 +856,10 @@
     updateBoughtChips(targets);
 
     const progress = detailProgress(targets);
-    const list = state.bought === 'yes'
-      ? candidates.filter(isBought)
-      : candidates;
+    const boughtList = candidates.filter(isBought);
+    const list = state.bought === 'yes' ? boughtList : candidates;
+
+    renderStats(candidates, boughtList, progress);
 
     el.resultCount.textContent = list.length ? list.length + '件' : '';
 
@@ -1408,6 +1457,13 @@
       });
   }
 
+  /** スライダーの下限に一致するプリセットに印を付ける */
+  function markPresetChip() {
+    Array.prototype.forEach.call(el.pminChips.children, function (c) {
+      c.classList.toggle('is-active', Number(c.dataset.pmin) === state.priceMin);
+    });
+  }
+
   /* ---------- セールスレター分析 ---------- */
 
   function renderLetterResult(result) {
@@ -1564,8 +1620,18 @@
     });
 
     // 価格帯スライダー
-    el.priceMin.addEventListener('input', function () { syncPriceRange(); render(); });
-    el.priceMax.addEventListener('input', function () { syncPriceRange(); render(); });
+    el.priceMin.addEventListener('input', function () { syncPriceRange(); markPresetChip(); render(); });
+    el.priceMax.addEventListener('input', function () { syncPriceRange(); markPresetChip(); render(); });
+
+    // 下限をワンタップで指定
+    el.pminChips.addEventListener('click', function (e) {
+      const btn = e.target.closest('.chip');
+      if (!btn) return;
+      el.priceMin.value = btn.dataset.pmin;
+      syncPriceRange();
+      markPresetChip();
+      render();
+    });
 
     bindLetterEvents();
 
