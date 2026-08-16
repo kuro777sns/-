@@ -12,6 +12,13 @@
   const API_BASE = 'https://note.com/api/v3/searches';
   const PAGE_SIZE = 12;
   const FETCH_TIMEOUT = 12000;
+  const PRICE_MAX = 10000;   // スライダーの右端。この値は「上限なし」の意味
+
+  // 購入数がどのキーで返ってくるか分からないので、ありそうなものを順に見る
+  const BUYER_KEYS = [
+    'buyer_count', 'buyers_count', 'purchase_count', 'purchased_count',
+    'sales_count', 'sold_count', 'buy_count', 'paid_count',
+  ];
 
   // 中継候補（先頭 null = 直接アクセス）
   const PROXY_CANDIDATES = [
@@ -43,6 +50,9 @@
     sort: 'selling',
     price: 'all',
     period: 'all',
+    bought: 'all',
+    priceMin: 0,
+    priceMax: PRICE_MAX,   // PRICE_MAX = 上限なし
     favOnly: false,
     page: 0,
     items: [],
@@ -73,6 +83,20 @@
     sortChips:   document.getElementById('sortChips'),
     priceChips:  document.getElementById('priceChips'),
     periodChips: document.getElementById('periodChips'),
+    boughtChips: document.getElementById('boughtChips'),
+    boughtNote:  document.getElementById('boughtNote'),
+    priceMin:    document.getElementById('priceMin'),
+    priceMax:    document.getElementById('priceMax'),
+    rangeFill:   document.getElementById('rangeFill'),
+    rangeLabel:  document.getElementById('priceRangeLabel'),
+    tabs:        document.getElementById('tabs'),
+    searchPane:  document.getElementById('searchPane'),
+    letterPane:  document.getElementById('letterPane'),
+    letterInput: document.getElementById('letterInput'),
+    letterCount: document.getElementById('letterCount'),
+    letterRun:   document.getElementById('letterRun'),
+    letterClear: document.getElementById('letterClear'),
+    letterResult: document.getElementById('letterResult'),
     favToggle:   document.getElementById('favToggle'),
     favCount:    document.getElementById('favCount'),
     settingsBtn: document.getElementById('settingsBtn'),
@@ -225,6 +249,16 @@
     return found;
   }
 
+  /** 購入数を取り出す。取れなければ null（＝データなし、0件とは区別する） */
+  function extractBuyers(n) {
+    for (let i = 0; i < BUYER_KEYS.length; i++) {
+      const v = n[BUYER_KEYS[i]];
+      if (typeof v === 'number' && isFinite(v)) return v;
+      if (typeof v === 'string' && v !== '' && isFinite(Number(v))) return Number(v);
+    }
+    return null;
+  }
+
   function normalize(n, genreId) {
     const user = n.user || n.note_user || {};
     const urlname = user.urlname || user.url_name || '';
@@ -239,6 +273,7 @@
       authorIcon: user.user_profile_image_path || user.profile_image_path || '',
       likes: Number(n.like_count || n.likeCount || 0),
       price: Number(n.price || 0),
+      buyers: extractBuyers(n),
       publishAt: n.publish_at || n.publishAt || n.created_at || '',
       thumb: n.eyecatch || (Array.isArray(n.pictures) && n.pictures[0] && n.pictures[0].url) || '',
       isDemo: false,
@@ -276,18 +311,34 @@
      並び替え・絞り込み・スコア
      ============================================================ */
 
-  /** 売れ筋スコアの元になる値（有料＝価格×スキ、無料＝スキのみ） */
+  /**
+   * 売れ筋スコアの元になる値。
+   * 購入数が取れる記事はそれを最優先で使い、取れなければ推定に落とす。
+   */
   function rawScore(note) {
+    if (note.buyers !== null && note.price > 0) return note.price * note.buyers * 10;
     return note.price > 0 ? note.price * note.likes : note.likes;
+  }
+
+  /** この結果セットで購入数が取れているか */
+  function hasBuyerData(items) {
+    return items.some(function (n) { return n.buyers !== null; });
   }
 
   function applyFilters(items) {
     const now = Date.now();
     const periodDays = state.period === 'all' ? null : Number(state.period);
+    const noUpperLimit = state.priceMax >= PRICE_MAX;
 
     return items.filter(function (n) {
       if (state.price === 'paid' && n.price <= 0) return false;
       if (state.price === 'free' && n.price > 0) return false;
+
+      // 価格帯（無料noteは価格0なので下限0のときだけ残る）
+      if (n.price < state.priceMin) return false;
+      if (!noUpperLimit && n.price > state.priceMax) return false;
+
+      if (state.bought === 'yes' && !(n.buyers !== null && n.buyers > 0)) return false;
 
       if (periodDays && n.publishAt) {
         const t = Date.parse(n.publishAt);
@@ -373,7 +424,9 @@
   function cardHtml(n, scorePct, isHot) {
     const isFav = Object.prototype.hasOwnProperty.call(favs, n.id);
     const paid = n.price > 0;
-    const scoreLabel = paid ? '売れ筋スコア' : '人気度';
+    const scoreLabel = !paid ? '人気度'
+      : n.buyers !== null ? '売れ筋スコア（実売ベース）'
+      : '売れ筋スコア（推定）';
 
     const thumb = n.thumb
       ? '<img src="' + escapeHtml(n.thumb) + '" alt="" loading="lazy" decoding="async">'
@@ -387,6 +440,9 @@
       '<div class="card-thumb">' + thumb +
         '<div class="card-badges">' +
           '<span class="badge ' + (paid ? 'paid">' + escapeHtml(formatPrice(n.price)) : 'free">無料') + '</span>' +
+          (n.buyers !== null && n.buyers > 0
+            ? '<span class="badge bought">🛒 ' + n.buyers.toLocaleString('ja-JP') + '人が購入</span>'
+            : '') +
           (isHot ? '<span class="badge hot">🔥 売れ筋</span>' : '') +
         '</div>' +
         '<button type="button" class="fav-btn' + (isFav ? ' is-on' : '') + '"' +
@@ -405,6 +461,7 @@
         '<div class="score-bar"><span style="width:' + scorePct + '%"></span></div>' +
         '<div class="card-meta">' +
           '<span class="likes">♡ ' + n.likes.toLocaleString('ja-JP') + '</span>' +
+          (n.buyers !== null ? '<span>🛒 ' + n.buyers.toLocaleString('ja-JP') + '</span>' : '') +
           '<span class="price">' + escapeHtml(formatPrice(n.price)) + '</span>' +
           (n.publishAt ? '<span>' + escapeHtml(formatDate(n.publishAt)) + '</span>' : '') +
         '</div>' +
@@ -419,6 +476,27 @@
       '<p>' + escapeHtml(message) + '</p>' +
       (sub ? '<p>' + escapeHtml(sub) + '</p>' : '') +
       '</div>';
+  }
+
+  /**
+   * 購入数が取れているかどうかで「買われた実績あり」フィルタの有効/無効を切り替える。
+   * 取れないのに絞り込めるように見せると嘘になるので、そのときは無効化して理由を出す。
+   */
+  function updateBoughtChips(pool) {
+    const available = hasBuyerData(pool);
+    const yesChip = el.boughtChips.querySelector('[data-bought="yes"]');
+
+    yesChip.disabled = !available && pool.length > 0;
+    el.boughtNote.textContent = !pool.length ? ''
+      : available ? '' : 'このAPIからは購入数が取得できないため、売れ筋は価格×スキ数の推定値です。';
+
+    // 使えないのに選ばれたままにしない
+    if (yesChip.disabled && state.bought === 'yes') {
+      state.bought = 'all';
+      Array.prototype.forEach.call(el.boughtChips.children, function (c) {
+        c.classList.toggle('is-active', c.dataset.bought === 'all');
+      });
+    }
   }
 
   function render() {
@@ -436,7 +514,10 @@
       ? Object.keys(favs).map(function (k) { return favs[k]; })
       : state.items;
 
-    const list = applySort(applyFilters(dedupe(source)));
+    const pool = dedupe(source);
+    updateBoughtChips(pool);
+
+    const list = applySort(applyFilters(pool));
 
     el.resultCount.textContent = list.length ? list.length + '件' : '';
 
@@ -491,7 +572,8 @@
     state.items = picked.slice();
     setStatus('warn', '🧸',
       '<p><strong>デモデータを表示しています。</strong>' + escapeHtml(reason || '') + '</p>' +
-      '<p>実在の記事ではありません。設定（⚙️）から中継URLを入れると本物のnoteを表示できます。</p>');
+      '<p>実在の記事ではありません（購入数もサンプル値です）。' +
+      '設定（⚙️）から中継URLを入れると本物のnoteを表示できます。</p>');
     render();
   }
 
@@ -590,7 +672,7 @@
   function bindChipGroup(container, key, onChange) {
     container.addEventListener('click', function (e) {
       const btn = e.target.closest('.chip');
-      if (!btn || !container.contains(btn)) return;
+      if (!btn || !container.contains(btn) || btn.disabled) return;
       Array.prototype.forEach.call(container.children, function (c) {
         c.classList.toggle('is-active', c === btn);
       });
@@ -599,7 +681,155 @@
     });
   }
 
+  /* ---------- 価格帯スライダー ---------- */
+
+  function syncPriceRange() {
+    let min = Number(el.priceMin.value);
+    let max = Number(el.priceMax.value);
+
+    // つまみが交差したら押し返す
+    if (min > max) {
+      if (document.activeElement === el.priceMin) { max = min; el.priceMax.value = String(max); }
+      else { min = max; el.priceMin.value = String(min); }
+    }
+
+    state.priceMin = min;
+    state.priceMax = max;
+
+    const left = (min / PRICE_MAX) * 100;
+    const right = (max / PRICE_MAX) * 100;
+    el.rangeFill.style.left = left + '%';
+    el.rangeFill.style.width = Math.max(0, right - left) + '%';
+
+    el.rangeLabel.textContent = '¥' + min.toLocaleString('ja-JP') + ' 〜 ' +
+      (max >= PRICE_MAX ? '上限なし' : '¥' + max.toLocaleString('ja-JP'));
+  }
+
+  /* ---------- セールスレター分析 ---------- */
+
+  function renderLetterResult(result) {
+    const angle = Math.round((result.score / 100) * 360);
+
+    const stats = [
+      ['文字数', result.stats.chars.toLocaleString('ja-JP') + '字'],
+      ['段落', result.stats.paragraphs + '個'],
+      ['見出し', result.stats.headings + '個'],
+      ['1段落あたり', result.stats.avgParagraph + '字'],
+      ['数字の登場', result.stats.numbers + '回'],
+      ['問いかけ', result.stats.questions + '回'],
+    ];
+    if (result.stats.pricePos !== null) stats.push(['価格が出る位置', result.stats.pricePos + '%地点']);
+
+    const found = result.items.filter(function (i) { return i.found; }).length;
+
+    let html =
+      '<div class="score-card">' +
+        '<div class="score-ring" style="background:conic-gradient(var(--pink) ' + angle + 'deg, var(--cream-deep) 0)">' +
+          '<span class="score-inner"><span class="score-num">' + result.score + '</span>' +
+          '<span class="score-max">/ 100</span></span>' +
+        '</div>' +
+        '<div class="score-summary">' +
+          '<h3>構成スコア<span class="grade-pill">' + result.grade + '判定</span></h3>' +
+          '<p>タイプ：<b>' + escapeHtml(result.type) + '</b><br>' +
+          '12の要素のうち <b>' + found + '個</b> が入っています。' +
+          (result.missing.length
+            ? '足りないのは「' + escapeHtml(result.missing[0].name) + '」あたりです。'
+            : 'ひととおりそろっています。') + '</p>' +
+          '<div class="stat-row">' +
+            stats.map(function (s) {
+              return '<span class="stat-pill">' + escapeHtml(s[0]) + ' <b>' + escapeHtml(s[1]) + '</b></span>';
+            }).join('') +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    html += '<div class="check-list">' + result.items.map(function (i) {
+      return '<div class="check-item' + (i.found ? '' : ' is-missing') + '">' +
+        '<span class="check-emoji" aria-hidden="true">' + i.emoji + '</span>' +
+        '<div class="check-body">' +
+          '<div class="check-name">' + escapeHtml(i.name) +
+            '<span class="check-mark">' + (i.found ? '✅' : '⚠️ 不足') + '</span></div>' +
+          (i.found
+            ? '<p class="check-hit">' + escapeHtml(i.hits[0]) + '</p>'
+            : '<p class="check-hint">' + escapeHtml(i.hint) + '</p>') +
+        '</div>' +
+      '</div>';
+    }).join('') + '</div>';
+
+    if (result.missing.length) {
+      html += '<div class="advice-box"><h3>🎯 まず直すならこの順番</h3><ol>' +
+        result.missing.slice(0, 4).map(function (m) {
+          return '<li><b>' + escapeHtml(m.name) + '</b>：' + escapeHtml(m.hint) + '</li>';
+        }).join('') + '</ol></div>';
+    }
+
+    if (result.notes.length) {
+      html += '<div class="advice-box"><h3>👀 読みやすさで気になったところ</h3><ul>' +
+        result.notes.map(function (n) { return '<li>' + escapeHtml(n) + '</li>'; }).join('') +
+        '</ul></div>';
+    }
+
+    html += '<div class="advice-box"><h3>ℹ️ この判定について</h3><ul>' +
+      '<li>キーワードと文章構造から「要素が入っているか」を機械的に見ているだけです。' +
+      '売上を予測するものではありません。</li>' +
+      '<li>スコアが低くても売れるレターはあります。あくまで抜けを見つけるチェックリストとして使ってください。</li>' +
+      '</ul></div>';
+
+    el.letterResult.innerHTML = html;
+    el.letterResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function bindLetterEvents() {
+    function updateCount() {
+      el.letterCount.textContent = el.letterInput.value.length.toLocaleString('ja-JP') + '字';
+    }
+
+    el.letterInput.addEventListener('input', updateCount);
+
+    el.letterRun.addEventListener('click', function () {
+      const text = el.letterInput.value.trim();
+      if (text.length < 100) {
+        el.letterResult.innerHTML =
+          '<div class="advice-box"><h3>📋 もう少し貼り付けてください</h3>' +
+          '<p style="margin:0;font-size:.85rem;line-height:1.8">' +
+          '判定には100字以上必要です。noteの無料部分をまるごとコピーして貼るのがおすすめです。</p></div>';
+        return;
+      }
+      renderLetterResult(window.analyzeLetter(text));
+    });
+
+    el.letterClear.addEventListener('click', function () {
+      el.letterInput.value = '';
+      el.letterResult.innerHTML = '';
+      updateCount();
+      el.letterInput.focus();
+    });
+  }
+
   function bindEvents() {
+    // タブ
+    el.tabs.addEventListener('click', function (e) {
+      const btn = e.target.closest('.tab');
+      if (!btn) return;
+      const isSearch = btn.dataset.tab === 'search';
+
+      Array.prototype.forEach.call(el.tabs.children, function (t) {
+        const on = t === btn;
+        t.classList.toggle('is-active', on);
+        t.setAttribute('aria-selected', String(on));
+      });
+
+      el.searchPane.hidden = !isSearch;
+      el.letterPane.hidden = isSearch;
+      el.searchForm.hidden = !isSearch;
+    });
+
+    // 価格帯スライダー
+    el.priceMin.addEventListener('input', function () { syncPriceRange(); render(); });
+    el.priceMax.addEventListener('input', function () { syncPriceRange(); render(); });
+
+    bindLetterEvents();
+
     // ジャンル
     el.genreGrid.addEventListener('click', function (e) {
       const btn = e.target.closest('.genre-card');
@@ -629,6 +859,7 @@
     bindChipGroup(el.sortChips, 'sort', function () { syncHash(); load(true); });
     bindChipGroup(el.priceChips, 'price', render);
     bindChipGroup(el.periodChips, 'period', render);
+    bindChipGroup(el.boughtChips, 'bought', render);
 
     // お気に入り表示切替
     el.favToggle.addEventListener('click', function () {
@@ -692,6 +923,7 @@
 
   readHash();
   renderGenres();
+  syncPriceRange();
   bindEvents();
   el.favCount.textContent = String(Object.keys(favs).length);
   load(true);

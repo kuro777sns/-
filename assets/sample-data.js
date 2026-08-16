@@ -37,7 +37,7 @@
 
   const authors = ['さくら', 'ゆの', 'みなと', 'こまち', 'あおい', 'ひなた', 'つむぎ', 'りん'];
   const DAY = 86400000;
-  const BASE = Date.parse('2026-08-01T00:00:00+09:00');
+  const BASE = Date.now();   // 「◯日前」が常に自然に見えるよう、今日を基準にする
 
   window.SAMPLE_NOTES = raw.map(function (r, i) {
     const [genreId, title, price, likes, daysAgo] = r;
@@ -54,6 +54,8 @@
       authorIcon: '',
       likes: likes,
       price: price,
+      // 有料noteだけ購入数を持たせている（デモ用のサンプル値）
+      buyers: price > 0 ? Math.max(1, Math.round(likes / (6 + (i % 5)))) : null,
       publishAt: new Date(BASE - daysAgo * DAY).toISOString(),
       thumb: '',
       isDemo: true,
