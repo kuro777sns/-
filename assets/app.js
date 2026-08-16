@@ -14,7 +14,7 @@
   // 自前の中継サーバーを登録している場合は、遠慮せずたくさん取りにいく。
   // 公開の共用サービス頼みのときは弾かれるので控えめにする。
   const PAGES_PER_LOAD = 4;      // 共用の中継のとき、キーワードごとに取るページ数
-  const PAGES_PER_LOAD_DEEP = 6; // 自前の中継があるとき（増やしすぎるとnote側に弾かれる）
+  const PAGES_PER_LOAD_DEEP = 5; // 自前の中継があるとき（増やしすぎるとnote側に弾かれる）
   const DETAIL_LIMIT = 300;      // 購入状況を調べにいく上限（共用の中継のとき）
   const DETAIL_LIMIT_DEEP = 600; // 自前の中継があるとき
   const DETAIL_FAIL_LIMIT = 12;  // 続けてこの回数失敗したら、調べるのをやめる
@@ -387,7 +387,7 @@
 
     // キーワードが多い枠で全ページ取ると通信が膨らむので、そのぶんページ数を減らす
     const base = hasOwnProxy() ? PAGES_PER_LOAD_DEEP : PAGES_PER_LOAD;
-    const pages = queries.length > 10 ? Math.max(2, Math.round(base / 3)) : base;
+    const pages = queries.length > 12 ? Math.max(2, Math.round(base / 3)) : base;
 
     const jobs = [];
     queries.forEach(function (q) {
