@@ -662,16 +662,41 @@
     if (hide) hide.addEventListener('click', function () { showEmptyGenres = false; renderGenres(); });
   }
 
+  function genreButton(g, big) {
+    const active = !state.query && g.id === state.genreId;
+    return '<button type="button" class="genre-pill' + (big ? ' is-big' : '') +
+      (active ? ' is-active' : '') + '"' +
+      ' data-genre="' + escapeHtml(g.id) + '" aria-pressed="' + (active ? 'true' : 'false') + '">' +
+      '<span class="emoji" aria-hidden="true">' + g.emoji + '</span>' +
+      escapeHtml(g.name) + '</button>';
+  }
+
   function renderGenres() {
     renderGenreHiddenNote();
-    el.genreGrid.innerHTML = visibleGenres().map(function (g) {
-      const active = !state.query && g.id === state.genreId;
-      return '<button type="button" class="genre-card' + (active ? ' is-active' : '') + '"' +
-        ' data-genre="' + escapeHtml(g.id) + '" aria-pressed="' + (active ? 'true' : 'false') + '">' +
-        '<span class="emoji" aria-hidden="true">' + g.emoji + '</span>' +
-        '<span class="genre-name">' + escapeHtml(g.name) + '</span>' +
-        '</button>';
-    }).join('');
+
+    const shown = visibleGenres();
+    const groups = window.GENRE_GROUPS || [];
+    let html = '';
+
+    // まず横断系を大きめに置く
+    const wide = shown.filter(function (g) { return !g.group; });
+    if (wide.length) {
+      html += '<div class="genre-row genre-row--wide">' +
+        wide.map(function (g) { return genreButton(g, true); }).join('') + '</div>';
+    }
+
+    // つぎにグループごとに並べる
+    groups.forEach(function (grp) {
+      const members = shown.filter(function (g) { return g.group === grp.id; });
+      if (!members.length) return;
+      html += '<div class="genre-group">' +
+        '<h3 class="genre-group-title"><span aria-hidden="true">' + grp.emoji + '</span> ' +
+        escapeHtml(grp.name) + '</h3>' +
+        '<div class="genre-row">' + members.map(function (g) { return genreButton(g, false); }).join('') +
+        '</div></div>';
+    });
+
+    el.genreGrid.innerHTML = html;
   }
 
   function setStatus(type, emoji, html) {
@@ -814,10 +839,10 @@
     const rate = progress.done ? Math.round((boughtList.length / progress.done) * 100) : 0;
 
     const boxes = [
-      ['条件に合うnote', candidates.length.toLocaleString('ja-JP') + '件', false],
-      ['購入状況を確認', progress.done.toLocaleString('ja-JP') + '件', false],
-      ['🔥 買われています', boughtList.length.toLocaleString('ja-JP') + '件', true],
-      ['売れている割合', rate + '%', false],
+      ['条件に合う数', candidates.length.toLocaleString('ja-JP') + '件', false],
+      ['確認した数', progress.done.toLocaleString('ja-JP') + '件', false],
+      ['🔥 買われてる', boughtList.length.toLocaleString('ja-JP') + '件', true],
+      ['売れてる率', rate + '%', false],
       ['平均価格', '¥' + avg.toLocaleString('ja-JP'), false],
       ['最高価格', '¥' + max.toLocaleString('ja-JP'), false],
     ];
@@ -1637,7 +1662,7 @@
 
     // ジャンル
     el.genreGrid.addEventListener('click', function (e) {
-      const btn = e.target.closest('.genre-card');
+      const btn = e.target.closest('.genre-pill');
       if (!btn) return;
       state.genreId = btn.dataset.genre;
       state.query = '';

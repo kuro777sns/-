@@ -224,45 +224,57 @@ a { color: inherit; }
 }
 
 /* ---- ジャンル ---- */
-.genre-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
-  gap: 10px;
+.genre-grid { display: flex; flex-direction: column; gap: 14px; }
+
+.genre-group-title {
+  margin: 0 0 7px;
+  font-size: .78rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
-.genre-card {
-  position: relative;
-  display: flex;
-  flex-direction: column;
+.genre-row { display: flex; flex-wrap: wrap; gap: 7px; }
+.genre-row--wide { gap: 8px; }
+
+.genre-pill {
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 14px 8px 12px;
-  border: 2px solid transparent;
-  border-radius: var(--radius-md);
+  gap: 6px;
+  border: 1.5px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 15px;
   background: var(--white);
-  box-shadow: var(--shadow);
+  box-shadow: 0 2px 8px rgba(244, 99, 143, .06);
   font-family: inherit;
   font-size: .82rem;
-  font-weight: 700;
+  font-weight: 500;
   color: var(--ink);
   cursor: pointer;
-  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+  white-space: nowrap;
+  transition: all .16s ease;
 }
-.genre-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-hover); }
-.genre-card .emoji { font-size: 1.6rem; line-height: 1.2; }
-.genre-card .genre-name { text-align: center; line-height: 1.35; }
+.genre-pill:hover { border-color: var(--pink-soft); transform: translateY(-1px); }
+.genre-pill .emoji { font-size: 1rem; line-height: 1; }
 
-.genre-card.is-active {
-  border-color: var(--pink);
-  background: linear-gradient(160deg, #FFF, var(--pink-soft));
+.genre-pill.is-active {
+  background: linear-gradient(135deg, var(--pink), var(--pink-deep));
+  border-color: var(--pink-deep);
+  color: var(--white);
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(244, 99, 143, .3);
 }
-.genre-card.is-active::after {
-  content: "♡";
-  position: absolute;
-  top: 5px; right: 9px;
-  font-size: .8rem;
-  color: var(--pink-deep);
+
+.genre-pill.is-big {
+  padding: 11px 22px;
+  font-size: .92rem;
+  font-weight: 700;
+  border-width: 2px;
+  border-color: var(--pink-soft);
 }
+.genre-pill.is-big .emoji { font-size: 1.15rem; }
 
 /* ---- 折りたたみ ---- */
 .wide-toggle {
@@ -308,7 +320,7 @@ a { color: inherit; }
 }
 
 .genre-grid.is-collapsed {
-  max-height: 248px;
+  max-height: 260px;
   overflow: hidden;
   -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent);
   mask-image: linear-gradient(to bottom, #000 70%, transparent);
@@ -508,16 +520,15 @@ a { color: inherit; }
 
 /* ---- 件数の内訳 ---- */
 .stats-bar {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 8px;
-  flex-wrap: wrap;
   margin: 4px 0 14px;
 }
 .stats-bar:empty { display: none; }
 
 .stat-box {
-  flex: 1;
-  min-width: 108px;
+  min-width: 0;
   background: var(--white);
   border-radius: var(--radius-md);
   padding: 10px 14px;
@@ -526,6 +537,7 @@ a { color: inherit; }
 }
 .stat-box .stat-num {
   display: block;
+  white-space: nowrap;
   font-size: 1.25rem;
   font-weight: 700;
   line-height: 1.3;
@@ -535,10 +547,10 @@ a { color: inherit; }
 .stat-box.is-hot { background: linear-gradient(160deg, #FFF, var(--pink-soft)); }
 
 @media (max-width: 700px) {
-  .stats-bar { gap: 6px; }
-  .stat-box { min-width: 0; padding: 8px 6px; }
-  .stat-box .stat-num { font-size: 1.05rem; }
-  .stat-box .stat-label { font-size: .64rem; }
+  .stats-bar { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .stat-box { padding: 8px 4px; }
+  .stat-box .stat-num { font-size: 1rem; }
+  .stat-box .stat-label { font-size: .62rem; line-height: 1.4; }
 }
 
 /* ---- ステータス ---- */
@@ -1068,32 +1080,13 @@ a { color: inherit; }
 
   .section { margin-top: 22px; }
 
-  /* ジャンルは4列。折りたたみ時は2行だけ見せる */
-  .genre-grid { grid-template-columns: repeat(4, 1fr); gap: 7px; }
-  .genre-hidden-note {
-  margin: 8px 0 0;
-  font-size: .74rem;
-  color: var(--ink-soft);
-  text-align: center;
-}
-.genre-hidden-note:empty { display: none; }
-
-.linklike {
-  border: none;
-  background: none;
-  padding: 0;
-  font-family: inherit;
-  font-size: inherit;
-  font-weight: 700;
-  color: var(--pink-deep);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.genre-grid.is-collapsed { max-height: 172px; }
-  .genre-card { font-size: .68rem; padding: 9px 3px 8px; border-radius: 14px; gap: 2px; }
-  .genre-card .emoji { font-size: 1.3rem; }
-  .genre-card.is-active::after { top: 2px; right: 5px; font-size: .7rem; }
+  /* ジャンルは折りたたんで、恋愛と占いだけ見えるくらいに */
+  .genre-grid { gap: 12px; }
+  .genre-grid.is-collapsed { max-height: 300px; }
+  .genre-row { gap: 6px; }
+  .genre-pill { padding: 8px 13px; font-size: .77rem; gap: 5px; }
+  .genre-pill.is-big { padding: 10px 16px; font-size: .84rem; }
+  .genre-group-title { font-size: .73rem; }
 
   /* 絞り込みはたたんでおく。開くボタンに今の条件を出す */
   .filters { padding: 12px 14px; border-radius: var(--radius-md); }
@@ -1132,28 +1125,7 @@ a { color: inherit; }
 
 /* ---- 細いスマホ ---- */
 @media (max-width: 380px) {
-  .genre-grid { grid-template-columns: repeat(3, 1fr); }
-  .genre-hidden-note {
-  margin: 8px 0 0;
-  font-size: .74rem;
-  color: var(--ink-soft);
-  text-align: center;
-}
-.genre-hidden-note:empty { display: none; }
-
-.linklike {
-  border: none;
-  background: none;
-  padding: 0;
-  font-family: inherit;
-  font-size: inherit;
-  font-weight: 700;
-  color: var(--pink-deep);
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-.genre-grid.is-collapsed { max-height: 186px; }
+  .genre-pill { font-size: .74rem; padding: 7px 11px; }
   .card-grid { grid-template-columns: 1fr; }
 }
 
