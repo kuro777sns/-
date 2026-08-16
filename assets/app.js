@@ -40,6 +40,7 @@
     proxy: 'notesagashi:proxy',
     demo:  'notesagashi:demo',
     details: 'notesagashi:details',
+    counts:  'notesagashi:genrecounts',
   };
 
   const POPULAR_GENRE = {
@@ -58,7 +59,7 @@
     query: '',        // キーワード検索（入力があればジャンルより優先）
     sort: 'selling',
     price: 'paid',         // 無料noteは初期状態では出さない
-    period: '30',          // 直近1ヶ月の記事から探す
+    period: 'all',         // 「買われています」は購入の新しさなので、投稿日では絞らない
     bought: 'yes',         // 初期状態から「買われています」だけを出す
     priceMin: DEFAULT_MIN_PRICE,
     priceMax: PRICE_MAX,   // PRICE_MAX = 上限なし
@@ -100,6 +101,7 @@
     rangeLabel:  document.getElementById('priceRangeLabel'),
     tabs:        document.getElementById('tabs'),
     genreToggle: document.getElementById('genreToggle'),
+    genreHiddenNote: document.getElementById('genreHiddenNote'),
     filtersToggle: document.getElementById('filtersToggle'),
     filtersBody: document.getElementById('filtersBody'),
     filtersSummary: document.getElementById('filtersSummary'),
@@ -608,8 +610,48 @@
      描画
      ============================================================ */
 
+  /* ---------- 0件だったジャンルを覚えて隠す ---------- */
+
+  let genreCounts = (function () {
+    try { return JSON.parse(sessionStorage.getItem(STORAGE.counts) || '{}') || {}; }
+    catch (e) { return {}; }
+  })();
+
+  let showEmptyGenres = false;
+
+  function recordGenreCount(genreId, count) {
+    if (genreCounts[genreId] === count) return;
+    genreCounts[genreId] = count;
+    try { sessionStorage.setItem(STORAGE.counts, JSON.stringify(genreCounts)); } catch (e) { /* 無視 */ }
+    renderGenres();
+  }
+
+  /** 一度見て0件だったジャンルは、表示から外す（いま開いているものは残す） */
+  function visibleGenres() {
+    if (showEmptyGenres) return GENRES;
+    return GENRES.filter(function (g) {
+      return g.id === state.genreId || genreCounts[g.id] !== 0;
+    });
+  }
+
+  function renderGenreHiddenNote() {
+    const hidden = GENRES.length - visibleGenres().length;
+    if (!hidden && !showEmptyGenres) { el.genreHiddenNote.innerHTML = ''; return; }
+
+    el.genreHiddenNote.innerHTML = showEmptyGenres
+      ? '<button type="button" class="linklike" id="hideEmptyBtn">0件だったジャンルをまた隠す</button>'
+      : '結果が0件だったジャンルを' + hidden + '個隠しています ' +
+        '<button type="button" class="linklike" id="showEmptyBtn">すべて表示</button>';
+
+    const show = document.getElementById('showEmptyBtn');
+    const hide = document.getElementById('hideEmptyBtn');
+    if (show) show.addEventListener('click', function () { showEmptyGenres = true; renderGenres(); });
+    if (hide) hide.addEventListener('click', function () { showEmptyGenres = false; renderGenres(); });
+  }
+
   function renderGenres() {
-    el.genreGrid.innerHTML = GENRES.map(function (g) {
+    renderGenreHiddenNote();
+    el.genreGrid.innerHTML = visibleGenres().map(function (g) {
       const active = !state.query && g.id === state.genreId;
       return '<button type="button" class="genre-card' + (active ? ' is-active' : '') + '"' +
         ' data-genre="' + escapeHtml(g.id) + '" aria-pressed="' + (active ? 'true' : 'false') + '">' +
@@ -783,6 +825,11 @@
         return;
       }
 
+      if (!state.favOnly && !state.query && !state.usingDemo &&
+          (progress.done >= progress.total || enrichStopped)) {
+        recordGenreCount(state.genreId, 0);
+      }
+
       renderEmpty(
         state.favOnly ? 'お気に入りはまだありません'
           : state.bought === 'yes' ? '買われているnoteが見つかりませんでした'
@@ -813,6 +860,12 @@
 
     el.moreBtn.hidden = state.favOnly || !state.hasMore;
     el.favCount.textContent = String(Object.keys(favs).length);
+
+    // 調べ終わったジャンルの件数を覚えておく（0件なら次から隠す）
+    if (!state.favOnly && !state.query && !state.usingDemo &&
+        progress.done >= progress.total) {
+      recordGenreCount(state.genreId, list.length);
+    }
   }
 
   /* ============================================================
