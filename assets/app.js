@@ -56,7 +56,7 @@
     query: '',        // キーワード検索（入力があればジャンルより優先）
     sort: 'selling',
     price: 'paid',         // 無料noteは初期状態では出さない
-    period: '7',           // 直近1週間の記事から探す
+    period: '30',          // 直近1ヶ月の記事から探す
     bought: 'yes',         // 初期状態から「買われています」だけを出す
     priceMin: DEFAULT_MIN_PRICE,
     priceMax: PRICE_MAX,   // PRICE_MAX = 上限なし
