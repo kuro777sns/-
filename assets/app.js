@@ -109,6 +109,9 @@
     demoCheck:   document.getElementById('demoCheck'),
     diagBtn:     document.getElementById('diagBtn'),
     diagOut:     document.getElementById('diagOut'),
+    probeUrl:    document.getElementById('probeUrl'),
+    probeBtn:    document.getElementById('probeBtn'),
+    probeOut:    document.getElementById('probeOut'),
     saveBtn:     document.getElementById('saveSettings'),
   };
 
@@ -825,6 +828,129 @@
     return lines.join('\n');
   }
 
+  /* --- 「買われています」バッジの出どころ調査 --- */
+
+  const TREND_RE = /買われて|急上昇|話題|trend|ranking|popular|hot|badge|label|bought|purchas/i;
+
+  function summarizeValue(v) {
+    if (typeof v === 'string') {
+      return v.length > 70 ? JSON.stringify(v.slice(0, 70)) + '…(' + v.length + '字)' : JSON.stringify(v);
+    }
+    if (v && typeof v === 'object') {
+      return Array.isArray(v) ? '[配列 ' + v.length + '件]' : '{' + Object.keys(v).slice(0, 8).join(', ') + '}';
+    }
+    return JSON.stringify(v);
+  }
+
+  /** JSONの中から、キー名か値が正規表現にあたる場所を探す */
+  function searchJson(json, re, maxHits) {
+    const hits = [];
+    (function walk(v, path, depth) {
+      if (hits.length >= maxHits || depth > 7 || !v || typeof v !== 'object') return;
+
+      if (Array.isArray(v)) {
+        v.slice(0, 20).forEach(function (x, i) { walk(x, path + '[' + i + ']', depth + 1); });
+        return;
+      }
+
+      Object.keys(v).forEach(function (k) {
+        if (hits.length >= maxHits) return;
+        const val = v[k];
+        const here = path + '.' + k;
+
+        if (re.test(k)) hits.push('キー名 ' + here + ' = ' + summarizeValue(val));
+        // 本文は長いうえに誤検知するので値の検索からは外す
+        else if (typeof val === 'string' && k !== 'body' && re.test(val)) {
+          hits.push('値　　 ' + here + ' = ' + JSON.stringify(val.slice(0, 70)));
+        }
+        walk(val, here, depth + 1);
+      });
+    })(json, '', 0);
+    return hits;
+  }
+
+  /** HTMLの中で語句が出てくる前後を切り出す */
+  function findInHtml(html, word, maxHits) {
+    const hits = [];
+    let from = 0;
+    while (hits.length < maxHits) {
+      const at = html.indexOf(word, from);
+      if (at === -1) break;
+      hits.push(html.slice(Math.max(0, at - 160), at + 160).replace(/\s+/g, ' '));
+      from = at + word.length;
+    }
+    return hits;
+  }
+
+  function runNoteProbe() {
+    const url = el.probeUrl.value.trim();
+    const key = parseNoteKey(url);
+
+    el.probeOut.hidden = false;
+    if (!key) {
+      el.probeOut.textContent = '❌ noteの記事URLとして読み取れませんでした。\n' +
+        'https://note.com/○○○/n/n○○○○ の形で貼ってください。';
+      return;
+    }
+
+    el.probeOut.textContent = '調べています…（10秒ほどかかります）';
+    const out = ['記事キー: ' + key];
+
+    fetchViaAnyRoute('https://note.com/api/v3/notes/' + key)
+      .then(function (detail) {
+        const hits = searchJson(detail, TREND_RE, 25);
+        out.push('');
+        out.push('=== ① 記事詳細API ===');
+        out.push(hits.length
+          ? '👀 それらしい項目が見つかりました\n' + hits.map(function (h) { return '  ' + h; }).join('\n')
+          : '該当なし');
+
+        const obj = extractNotes(detail)[0] || (detail && detail.data) || detail;
+        if (obj && typeof obj === 'object') {
+          const bools = Object.keys(obj).filter(function (k) { return typeof obj[k] === 'boolean'; });
+          const nums = Object.keys(obj).filter(function (k) { return typeof obj[k] === 'number'; });
+          out.push('');
+          out.push('数値: ' + (nums.map(function (k) { return k + '=' + obj[k]; }).join(', ') || 'なし'));
+          out.push('真偽: ' + (bools.map(function (k) { return k + '=' + obj[k]; }).join(', ') || 'なし'));
+        }
+      })
+      .catch(function (e) {
+        out.push('');
+        out.push('=== ① 記事詳細API ===');
+        out.push('❌ 取得できませんでした（' + e.message + '）');
+      })
+      .then(function () {
+        el.probeOut.textContent = out.join('\n') + '\n\n記事ページを調べています…';
+        const pageUrl = /^https?:\/\//.test(url) ? url : 'https://note.com/n/' + key;
+        return fetchViaAnyRoute(pageUrl, true);
+      })
+      .then(function (html) {
+        out.push('');
+        out.push('=== ② 記事ページのHTML ===');
+        out.push('サイズ: ' + html.length.toLocaleString('ja-JP') + '文字');
+
+        const found = findInHtml(html, '買われて', 3);
+        out.push('');
+        out.push('「買われて」の出現: ' + found.length + '件');
+        found.forEach(function (h, i) {
+          out.push('--- ' + (i + 1) + ' ---');
+          out.push(h);
+        });
+        if (!found.length) {
+          out.push('（HTMLには含まれていません。バッジは表示後にJavaScriptが');
+          out.push('  別のAPIから取ってきて描画している可能性が高いです）');
+        }
+      })
+      .catch(function (e) {
+        out.push('');
+        out.push('=== ② 記事ページのHTML ===');
+        out.push('❌ 取得できませんでした（' + e.message + '）');
+      })
+      .then(function () {
+        el.probeOut.textContent = out.join('\n');
+      });
+  }
+
   function runDiagnostics() {
     el.diagOut.hidden = false;
     el.diagOut.textContent = '調べています…';
@@ -1196,10 +1322,13 @@
       el.demoCheck.checked = settings.demo;
       el.diagOut.hidden = true;
       el.diagOut.textContent = '';
+      el.probeOut.hidden = true;
+      el.probeOut.textContent = '';
       el.modal.hidden = false;
     });
 
     el.diagBtn.addEventListener('click', runDiagnostics);
+    el.probeBtn.addEventListener('click', runNoteProbe);
 
     el.modal.addEventListener('click', function (e) {
       if (e.target.hasAttribute('data-close')) el.modal.hidden = true;

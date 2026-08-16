@@ -211,6 +211,17 @@
       <pre class="diag-out" id="diagOut" hidden></pre>
     </div>
 
+    <div class="modal-field">
+      <label class="modal-label" for="probeUrl">🔎 「買われています」の出どころを探す</label>
+      <p class="modal-help">
+        note上で「買われています｜過去24時間」バッジが出ている記事のURLを貼ると、
+        そのデータがどこから来ているのかを探します。
+      </p>
+      <input type="url" id="probeUrl" class="modal-input" placeholder="https://note.com/○○○/n/n○○○○">
+      <button class="btn btn-ghost" id="probeBtn" type="button" style="margin-top:8px">このnoteを調べる</button>
+      <pre class="diag-out" id="probeOut" hidden></pre>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-ghost" type="button" data-close>とじる</button>
       <button class="btn btn-primary" id="saveSettings" type="button">保存してさがす</button>
