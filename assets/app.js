@@ -57,7 +57,7 @@
     sort: 'selling',
     price: 'paid',         // 無料noteは初期状態では出さない
     period: 'all',
-    bought: 'all',
+    bought: 'yes',         // 初期状態から「買われています」だけを出す
     priceMin: DEFAULT_MIN_PRICE,
     priceMax: PRICE_MAX,   // PRICE_MAX = 上限なし
     favOnly: false,
@@ -713,6 +713,7 @@
     enrichDetails(targets);
     updateBoughtChips(targets);
 
+    const progress = detailProgress(targets);
     const list = state.bought === 'yes'
       ? candidates.filter(isBought)
       : candidates;
@@ -720,9 +721,23 @@
     el.resultCount.textContent = list.length ? list.length + '件' : '';
 
     if (!list.length) {
+      // 購入状況を調べている最中は「0件」ではなく進捗を出す
+      if (state.bought === 'yes' && progress.done < progress.total) {
+        el.cardGrid.innerHTML =
+          '<div class="empty"><span class="empty-emoji" aria-hidden="true">🔎</span>' +
+          '<p>買われているnoteを探しています…</p>' +
+          '<p>' + progress.done + ' / ' + progress.total + '件を確認しました</p></div>';
+        el.moreBtn.hidden = true;
+        return;
+      }
+
       renderEmpty(
-        state.favOnly ? 'お気に入りはまだありません' : '条件に合うnoteが見つかりませんでした',
-        state.favOnly ? 'カードの☆を押すとここに貯まります' : '絞り込みをゆるめるか、別のジャンルを試してみてください'
+        state.favOnly ? 'お気に入りはまだありません'
+          : state.bought === 'yes' ? '買われているnoteが見つかりませんでした'
+          : '条件に合うnoteが見つかりませんでした',
+        state.favOnly ? 'カードの☆を押すとここに貯まります'
+          : state.bought === 'yes' ? '「すべて」に切り替えるか、価格の下限を下げてみてください'
+          : '絞り込みをゆるめるか、別のジャンルを試してみてください'
       );
       el.moreBtn.hidden = true;
       return;
